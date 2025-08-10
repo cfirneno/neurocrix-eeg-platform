@@ -1,4 +1,4 @@
-import streamlit as st
+ythonimport streamlit as st
 import numpy as np
 import pandas as pd
 import io
@@ -80,21 +80,13 @@ class DatabaseConnector:
     def __init__(self, db_config: Dict):
         self.config = db_config
         self.session = requests.Session()
-       def get_subject_sessions(self, subject_id: str) -> List[str]:
-    db_id = self.config.get("db_id")
-    if db_id == "physionet_chbmit":
-        return ["01", "02", "03", "04", "05"]
-    elif db_id == "bonn_seizure":
-        # Map each subject to its correct set
-        bonn_mapping = {
-            "Z": ["set_A"],  # Healthy, eyes open
-            "O": ["set_B"],  # Healthy, eyes closed
-            "N": ["set_C"],  # Seizure-free, from epileptogenic zone
-            "F": ["set_D"],  # Seizure-free, opposite hemisphere
-            "S": ["set_E"]   # SEIZURE DATA
-        }
-        return bonn_mapping.get(subject_id, ["set_A"])
-    return []
+        self.session.headers.update({'User-Agent': 'EEG-Analysis-Platform/1.0'})
+    
+    def list_subjects(self) -> List[str]:
+        db_id = self.config.get("db_id")
+        if db_id == "physionet_chbmit":
+            return [f"chb{i:02d}" for i in range(1, 25)]
+        elif db_id == "bonn_seizure":
             return ["Z", "O", "N", "F", "S"]
         return []
     
@@ -103,7 +95,15 @@ class DatabaseConnector:
         if db_id == "physionet_chbmit":
             return ["01", "02", "03", "04", "05"]
         elif db_id == "bonn_seizure":
-            return ["set_A", "set_B", "set_C", "set_D", "set_E"]
+            # Map each subject to its correct set
+            bonn_mapping = {
+                "Z": ["set_A"],  # Healthy, eyes open
+                "O": ["set_B"],  # Healthy, eyes closed
+                "N": ["set_C"],  # Seizure-free, from epileptogenic zone
+                "F": ["set_D"],  # Seizure-free, opposite hemisphere
+                "S": ["set_E"]   # SEIZURE DATA
+            }
+            return bonn_mapping.get(subject_id, ["set_A"])
         return []
     
     def download_eeg_sample(self, subject_id: str, session_id: str) -> Tuple[bytes, str]:
@@ -127,12 +127,15 @@ class DatabaseConnector:
             # Add noise
             signal += np.random.normal(0, 5, n_samples)
             
-            # Add spikes for seizure data
-            if session_id in ["F", "S"] or "seizure" in self.config.get("db_id", ""):
-                spike_times = np.random.choice(n_samples, size=5, replace=False)
+            # Add spikes for seizure data - ENHANCED FOR SET_E
+            if session_id == "set_E" or subject_id == "S":
+                # Much more dramatic seizure activity for Set E
+                spike_times = np.random.choice(n_samples, size=20, replace=False)
                 for spike_time in spike_times:
                     if spike_time < n_samples - 100:
-                        signal[spike_time:spike_time+50] += 200 * np.exp(-np.arange(50)/10)
+                        signal[spike_time:spike_time+50] += 500 * np.exp(-np.arange(50)/10)
+                # Add periodic high-amplitude oscillations
+                signal += 100 * np.sin(2 * np.pi * 3 * time_axis) * (np.sin(2 * np.pi * 0.5 * time_axis) > 0)
             
             signals[ch] = signal
         

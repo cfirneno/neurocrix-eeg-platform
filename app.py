@@ -16,7 +16,7 @@ def check_password():
     
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-            if st.session_state["password"] == st.secrets["APP_PASSWORD"]
+        if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # don't store password
         else:
@@ -545,7 +545,7 @@ Raw Data:
                     st.markdown(interpretation)
                     
                 except Exception as e:
-                    st.error(f"Analysis failed: {str(e)}")
+                        st.error(f"Analysis failed: {str(e)}")
 
 if __name__ == "__main__":
     main()

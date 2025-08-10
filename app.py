@@ -619,6 +619,7 @@ def generate_clinical_interpretation(results: Dict, patient_info: str = "", data
 def get_processor():
     return EnhancedEEGProcessor()
 
+# MAIN FUNCTION - FIXED INDENTATION
 def main():
     st.set_page_config(
         page_title="🧠 EEG Criticality Analysis",
@@ -749,79 +750,83 @@ def main():
                             st.metric("Mean R-parameter", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
                         
                         # Visualization
-                        import matplotlib.pyplot as plt
-                        fig, axes = plt.subplots(3, 1, figsize=(14, 10))
-                        
-                        # 1. R-parameter evolution
-                        ax1 = axes[0]
-                        colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red' 
-                                 for s in results['state_evolution']]
-                        scatter = ax1.scatter(results['times'], results['r_evolution'], 
-                                            c=colors, alpha=0.7, s=100, edgecolors='black', linewidth=0.5)
-                        ax1.axhline(y=3.57, color='red', linestyle='--', alpha=0.7, 
-                                   label='Chaos Threshold (3.57)', linewidth=2)
-                        ax1.axhline(y=3.0, color='green', linestyle='--', alpha=0.5, 
-                                   label='Stability Baseline (3.0)', linewidth=1)
-                        ax1.set_ylabel('R Parameter', fontsize=12)
-                        ax1.set_title('Brain State Criticality Evolution', fontsize=14, fontweight='bold')
-                        ax1.legend(loc='upper right')
-                        ax1.grid(True, alpha=0.3)
-                        ax1.set_ylim([2.5, 4.0])
-                        
-                        # Add shaded regions for different states
-                        for i, (time, state) in enumerate(zip(results['times'], results['state_evolution'])):
-                            if i < len(results['times']) - 1:
-                                next_time = results['times'][i + 1]
-                                if state == 'critical':
-                                    ax1.axvspan(time, next_time, alpha=0.2, color='red')
-                                elif state == 'transitional':
-                                    ax1.axvspan(time, next_time, alpha=0.1, color='orange')
-                        
-                        # 2. Frequency band power
-                        ax2 = axes[1]
-                        bands = ['Delta\n(0.5-4Hz)', 'Theta\n(4-8Hz)', 'Alpha\n(8-13Hz)', 
-                                'Beta\n(13-30Hz)', 'Gamma\n(30-50Hz)']
-                        powers = [results['band_statistics'][b.split('\n')[0].lower()]['mean_power'] 
-                                 for b in bands]
-                        bars = ax2.bar(bands, powers, color=['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000'], 
-                                      alpha=0.7, edgecolor='black', linewidth=1)
-                        ax2.set_ylabel('Mean Power (μV)', fontsize=12)
-                        ax2.set_title('EEG Frequency Band Analysis', fontsize=14, fontweight='bold')
-                        ax2.grid(True, alpha=0.3, axis='y')
-                        
-                        # Add value labels on bars
-                        for bar, power in zip(bars, powers):
-                            height = bar.get_height()
-                            ax2.text(bar.get_x() + bar.get_width()/2., height,
-                                   f'{power:.1f}μV', ha='center', va='bottom', fontweight='bold')
-                        
-                        # 3. Critical episodes timeline
-                        ax3 = axes[2]
-                        state_map = {'stable': 0, 'transitional': 1, 'critical': 2}
-                        state_values = [state_map[s] for s in results['state_evolution']]
-                        
-                        # Create step plot
-                        ax3.step(results['times'], state_values, where='post', linewidth=2, color='black')
-                        ax3.fill_between(results['times'], 0, state_values, step='post', alpha=0.5,
-                                        color=['green' if v == 0 else 'orange' if v == 1 else 'red' 
-                                              for v in state_values][0])
-                        
-                        # Mark critical windows
-                        for idx in results['critical_indices']:
-                            if idx < len(results['times']):
-                                ax3.plot(results['times'][idx], 2, 'r^', markersize=15, 
-                                       markeredgecolor='darkred', markeredgewidth=2)
-                        
-                        ax3.set_ylabel('Brain State', fontsize=12)
-                        ax3.set_xlabel('Time (seconds)', fontsize=12)
-                        ax3.set_title('State Transition Timeline', fontsize=14, fontweight='bold')
-                        ax3.set_yticks([0, 1, 2])
-                        ax3.set_yticklabels(['Stable', 'Transitional', 'Critical'])
-                        ax3.grid(True, alpha=0.3)
-                        ax3.set_ylim([-0.1, 2.1])
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig)
+                        try:
+                            import matplotlib.pyplot as plt
+                            
+                            fig, axes = plt.subplots(3, 1, figsize=(14, 10))
+                            
+                            # 1. R-parameter evolution
+                            ax1 = axes[0]
+                            colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red' 
+                                     for s in results['state_evolution']]
+                            scatter = ax1.scatter(results['times'], results['r_evolution'], 
+                                                c=colors, alpha=0.7, s=100, edgecolors='black', linewidth=0.5)
+                            ax1.axhline(y=3.57, color='red', linestyle='--', alpha=0.7, 
+                                       label='Chaos Threshold (3.57)', linewidth=2)
+                            ax1.axhline(y=3.0, color='green', linestyle='--', alpha=0.5, 
+                                       label='Stability Baseline (3.0)', linewidth=1)
+                            ax1.set_ylabel('R Parameter', fontsize=12)
+                            ax1.set_title('Brain State Criticality Evolution', fontsize=14, fontweight='bold')
+                            ax1.legend(loc='upper right')
+                            ax1.grid(True, alpha=0.3)
+                            ax1.set_ylim([2.5, 4.0])
+                            
+                            # Add shaded regions for different states
+                            for i, (time, state) in enumerate(zip(results['times'], results['state_evolution'])):
+                                if i < len(results['times']) - 1:
+                                    next_time = results['times'][i + 1]
+                                    if state == 'critical':
+                                        ax1.axvspan(time, next_time, alpha=0.2, color='red')
+                                    elif state == 'transitional':
+                                        ax1.axvspan(time, next_time, alpha=0.1, color='orange')
+                            
+                            # 2. Frequency band power
+                            ax2 = axes[1]
+                            bands = ['Delta\n(0.5-4Hz)', 'Theta\n(4-8Hz)', 'Alpha\n(8-13Hz)', 
+                                    'Beta\n(13-30Hz)', 'Gamma\n(30-50Hz)']
+                            powers = [results['band_statistics'][b.split('\n')[0].lower()]['mean_power'] 
+                                     for b in bands]
+                            bars = ax2.bar(bands, powers, color=['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000'], 
+                                          alpha=0.7, edgecolor='black', linewidth=1)
+                            ax2.set_ylabel('Mean Power (μV)', fontsize=12)
+                            ax2.set_title('EEG Frequency Band Analysis', fontsize=14, fontweight='bold')
+                            ax2.grid(True, alpha=0.3, axis='y')
+                            
+                            # Add value labels on bars
+                            for bar, power in zip(bars, powers):
+                                height = bar.get_height()
+                                ax2.text(bar.get_x() + bar.get_width()/2., height,
+                                       f'{power:.1f}μV', ha='center', va='bottom', fontweight='bold')
+                            
+                            # 3. Critical episodes timeline
+                            ax3 = axes[2]
+                            state_map = {'stable': 0, 'transitional': 1, 'critical': 2}
+                            state_values = [state_map[s] for s in results['state_evolution']]
+                            
+                            # Create step plot
+                            ax3.step(results['times'], state_values, where='post', linewidth=2, color='black')
+                            ax3.fill_between(results['times'], 0, state_values, step='post', alpha=0.5,
+                                            color=['green' if v == 0 else 'orange' if v == 1 else 'red' 
+                                                  for v in state_values][0])
+                            
+                            # Mark critical windows
+                            for idx in results['critical_indices']:
+                                if idx < len(results['times']):
+                                    ax3.plot(results['times'][idx], 2, 'r^', markersize=15, 
+                                           markeredgecolor='darkred', markeredgewidth=2)
+                            
+                            ax3.set_ylabel('Brain State', fontsize=12)
+                            ax3.set_xlabel('Time (seconds)', fontsize=12)
+                            ax3.set_title('State Transition Timeline', fontsize=14, fontweight='bold')
+                            ax3.set_yticks([0, 1, 2])
+                            ax3.set_yticklabels(['Stable', 'Transitional', 'Critical'])
+                            ax3.grid(True, alpha=0.3)
+                            ax3.set_ylim([-0.1, 2.1])
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                        except ImportError:
+                            st.warning("Matplotlib not available for visualization. Install it for better plots!")
                         
                         # Clinical interpretation
                         patient_info = f"Age: {patient_age}, Condition: {patient_condition or 'Not specified'}"

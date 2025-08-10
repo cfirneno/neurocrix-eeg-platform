@@ -80,13 +80,21 @@ class DatabaseConnector:
     def __init__(self, db_config: Dict):
         self.config = db_config
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'EEG-Analysis-Platform/1.0'})
-    
-    def list_subjects(self) -> List[str]:
-        db_id = self.config.get("db_id")
-        if db_id == "physionet_chbmit":
-            return [f"chb{i:02d}" for i in range(1, 25)]
-        elif db_id == "bonn_seizure":
+       def get_subject_sessions(self, subject_id: str) -> List[str]:
+    db_id = self.config.get("db_id")
+    if db_id == "physionet_chbmit":
+        return ["01", "02", "03", "04", "05"]
+    elif db_id == "bonn_seizure":
+        # Map each subject to its correct set
+        bonn_mapping = {
+            "Z": ["set_A"],  # Healthy, eyes open
+            "O": ["set_B"],  # Healthy, eyes closed
+            "N": ["set_C"],  # Seizure-free, from epileptogenic zone
+            "F": ["set_D"],  # Seizure-free, opposite hemisphere
+            "S": ["set_E"]   # SEIZURE DATA
+        }
+        return bonn_mapping.get(subject_id, ["set_A"])
+    return []
             return ["Z", "O", "N", "F", "S"]
         return []
     

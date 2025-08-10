@@ -439,7 +439,7 @@ class EnhancedEEGProcessor:
                                    amp_threshold: float = 0.3, subject_type: str = None) -> Dict:
         """
         Enhanced criticality detection using logistic map dynamics.
-        Properly tuned for seizure detection.
+        Properly tuned for seizure detection with correct frequency band reporting.
         """
         n_windows, n_channels, n_bands = features.shape
         
@@ -447,13 +447,17 @@ class EnhancedEEGProcessor:
         r_evolution = []
         state_evolution = []
         
+        # Store original features for band statistics before normalization
+        original_features = features.copy()
+        
         # Normalize features per band for better detection
+        normalized_features = features.copy()
         for band_idx in range(n_bands):
-            band_data = features[:, :, band_idx]
+            band_data = normalized_features[:, :, band_idx]
             band_mean = np.mean(band_data)
             band_std = np.std(band_data)
             if band_std > 0:
-                features[:, :, band_idx] = (band_data - band_mean) / band_std
+                normalized_features[:, :, band_idx] = (band_data - band_mean) / band_std
         
         # Initialize logistic map parameters
         r_params = np.full(n_bands, 3.0)  # Start at edge of stability
@@ -468,18 +472,18 @@ class EnhancedEEGProcessor:
             chaos_threshold = 3.57  # Standard chaos threshold
         
         for i in range(n_windows):
-            # Calculate power changes from baseline
+            # Use normalized features for detection
             if i == 0:
                 power_change = np.zeros((n_channels, n_bands))
             else:
-                power_change = features[i] - features[i-1]
+                power_change = normalized_features[i] - normalized_features[i-1]
             
             # Detect significant changes in each band
             band_activations = np.zeros(n_bands)
             for j in range(n_bands):
                 # Check for significant power increase in any channel
                 max_change = np.max(np.abs(power_change[:, j]))
-                mean_power = np.mean(np.abs(features[i, :, j]))
+                mean_power = np.mean(np.abs(normalized_features[i, :, j]))
                 
                 # Activation based on both absolute change and relative power
                 if max_change > 0.5 or mean_power > 1.5:
@@ -501,9 +505,13 @@ class EnhancedEEGProcessor:
             # Determine brain state based on R parameter and activations
             activation_ratio = np.sum(band_activations) / n_bands
             
-            # Special detection for seizure patterns (3-5 Hz dominance)
-            theta_delta_dominance = (features[i, :, 0].mean() + features[i, :, 1].mean()) / \
-                                   (features[i, :, 2].mean() + features[i, :, 3].mean() + features[i, :, 4].mean() + 0.001)
+            # Special detection for seizure patterns (3-5 Hz dominance) using ORIGINAL features
+            theta_delta_power = (np.mean(original_features[i, :, 0]) + np.mean(original_features[i, :, 1]))
+            other_power = (np.mean(original_features[i, :, 2]) + np.mean(original_features[i, :, 3]) + np.mean(original_features[i, :, 4]))
+            if other_power > 0:
+                theta_delta_dominance = theta_delta_power / other_power
+            else:
+                theta_delta_dominance = 0
             
             # State classification with enhanced seizure detection
             if r_avg > chaos_threshold or (activation_ratio > 0.6 and theta_delta_dominance > 2):
@@ -529,17 +537,15 @@ class EnhancedEEGProcessor:
         else:
             final_state = "stable"
         
-        # Compute band statistics (denormalized)
+        # Compute band statistics from ORIGINAL features (not normalized)
         band_names = ['delta', 'theta', 'alpha', 'beta', 'gamma']
         band_stats = {}
         
-        # Reload original features for statistics
         for i, band in enumerate(band_names):
-            band_data = features[:, :, i]
-            # Denormalize if needed
+            band_data = original_features[:, :, i]
             band_stats[band] = {
-                'mean_power': float(np.abs(np.mean(band_data)) * 100),  # Scale for display
-                'std_power': float(np.abs(np.std(band_data)) * 50)
+                'mean_power': float(np.mean(band_data)),
+                'std_power': float(np.std(band_data))
             }
         
         # Calculate Lyapunov exponent approximation for chaos measure
@@ -550,8 +556,8 @@ class EnhancedEEGProcessor:
             'critical_windows': len(critical_windows),
             'criticality_ratio': criticality_ratio,
             'final_state': final_state,
-            'mean_amplitude': float(np.mean(np.abs(features)) * 100),
-            'std_amplitude': float(np.std(np.abs(features)) * 50),
+            'mean_amplitude': float(np.mean(np.abs(original_features))),
+            'std_amplitude': float(np.std(np.abs(original_features))),
             'r_evolution': r_evolution,
             'state_evolution': state_evolution,
             'times': times.tolist(),
@@ -647,6 +653,27 @@ def generate_clinical_interpretation(results: Dict, patient_info: str = "", data
     else:
         interpretation += "No critical episodes detected during recording period"
     
+    # Add frequency band dominance analysis
+    interpretation += """
+    
+    ### **FREQUENCY DOMINANCE ANALYSIS**
+    """
+    
+    # Calculate which band is dominant
+    band_powers = {name: bands[name]['mean_power'] for name in bands}
+    dominant_band = max(band_powers, key=band_powers.get)
+    
+    if dominant_band == 'delta' and band_powers['delta'] > 100:
+        interpretation += "⚠️ **Delta Dominance:** Possible pathological slow-wave activity"
+    elif dominant_band == 'theta' and band_powers['theta'] > 80:
+        interpretation += "⚠️ **Theta Dominance:** Drowsiness or abnormal slowing"
+    elif dominant_band == 'alpha':
+        interpretation += "✅ **Alpha Dominance:** Normal relaxed brain state"
+    elif dominant_band == 'beta':
+        interpretation += "ℹ️ **Beta Dominance:** Active cognitive processing"
+    elif dominant_band == 'gamma':
+        interpretation += "ℹ️ **Gamma Dominance:** High-frequency cognitive binding"
+    
     interpretation += """
     
     ### **DATA QUALITY NOTICE**
@@ -687,7 +714,9 @@ def generate_clinical_interpretation(results: Dict, patient_info: str = "", data
     - SEIZURE SIMULATION: Ictal patterns with 3-5 Hz spike-wave complexes
     - High amplitude oscillations and rhythmic discharges
     - Expected criticality: > 40%
-    - Actual detected: {:.1f}%""".format(ratio * 100)
+    - Actual detected: {:.1f}%
+    - Delta power: {:.1f}μV (expected high)
+    - Theta power: {:.1f}μV (expected high)""".format(ratio * 100, bands['delta']['mean_power'], bands['theta']['mean_power'])
     
     interpretation += """
     
@@ -700,6 +729,7 @@ def generate_clinical_interpretation(results: Dict, patient_info: str = "", data
     ---
     *Generated by Advanced EEG Criticality Analysis Platform*
     *Using logistic map chaos detection for brain state analysis*
+    *Version: Production Ready 1.0*
     """
     
     return interpretation
@@ -731,9 +761,9 @@ def main():
         **ADVANCED FEATURES:**
         - ✅ Logistic map chaos detection (R-parameter analysis)
         - ✅ Real-time criticality assessment
-        - ✅ Multi-band frequency analysis
-        - ✅ Seizure pattern recognition
-        - ✅ Lyapunov exponent estimation
+        - ✅ Multi-band frequency analysis with accurate power measurements
+        - ✅ Seizure pattern recognition (3-5 Hz spike-wave detection)
+        - ✅ Lyapunov exponent estimation for chaos quantification
         
         **DATA SOURCE:**
         This platform uses scientifically modeled EEG patterns based on the Bonn University 
@@ -744,6 +774,8 @@ def main():
         - R < 3: Stable fixed point
         - 3 < R < 3.57: Periodic oscillations
         - R > 3.57: Chaotic dynamics (critical brain state)
+        
+        **VERSION:** Production Ready 1.0
         """)
     
     processor = get_processor()
@@ -812,7 +844,7 @@ def main():
                 if subject_id == 'S':
                     st.warning(f"⚠️ **{subject_id} Set:** {set_info['description']}\n\n"
                              f"**Characteristics:** {set_info['characteristics']}\n\n"
-                             f"**Expected Result:** HIGH CRITICALITY (>40%)")
+                             f"**Expected Result:** HIGH CRITICALITY (>40%) with elevated Delta/Theta power")
                 else:
                     st.info(f"**{subject_id} Set:** {set_info['description']}\n\n"
                            f"**Characteristics:** {set_info['characteristics']}")
@@ -977,11 +1009,21 @@ def main():
                             with col2:
                                 st.metric("Chaos Percentage", f"{results['complexity_metrics']['chaos_percentage']:.1f}%")
                                 st.metric("Mean Amplitude", f"{results['mean_amplitude']:.1f}μV")
+                            
+                            # Show frequency band details
+                            st.subheader("Frequency Band Power Details")
+                            band_df = pd.DataFrame({
+                                'Band': ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma'],
+                                'Frequency Range': ['0.5-4 Hz', '4-8 Hz', '8-13 Hz', '13-30 Hz', '30-50 Hz'],
+                                'Mean Power (μV)': [results['band_statistics'][b]['mean_power'] for b in ['delta', 'theta', 'alpha', 'beta', 'gamma']],
+                                'Std Dev (μV)': [results['band_statistics'][b]['std_power'] for b in ['delta', 'theta', 'alpha', 'beta', 'gamma']]
+                            })
+                            st.dataframe(band_df, use_container_width=True)
                         
                         # Download report
                         report_data = f"""
-EEG Criticality Analysis Report - Production Version
-====================================================
+EEG Criticality Analysis Report - Production Version 1.0
+=========================================================
 
 {interpretation}
 
@@ -999,6 +1041,13 @@ Chaos Theory Metrics:
 - Lyapunov Estimate: {results['complexity_metrics']['lyapunov_estimate']:.4f}
 - Chaos Percentage: {results['complexity_metrics']['chaos_percentage']:.2f}%
 
+Frequency Band Analysis:
+- Delta (0.5-4 Hz): {results['band_statistics']['delta']['mean_power']:.2f} ± {results['band_statistics']['delta']['std_power']:.2f} μV
+- Theta (4-8 Hz): {results['band_statistics']['theta']['mean_power']:.2f} ± {results['band_statistics']['theta']['std_power']:.2f} μV
+- Alpha (8-13 Hz): {results['band_statistics']['alpha']['mean_power']:.2f} ± {results['band_statistics']['alpha']['std_power']:.2f} μV
+- Beta (13-30 Hz): {results['band_statistics']['beta']['mean_power']:.2f} ± {results['band_statistics']['beta']['std_power']:.2f} μV
+- Gamma (30-50 Hz): {results['band_statistics']['gamma']['mean_power']:.2f} ± {results['band_statistics']['gamma']['std_power']:.2f} μV
+
 Raw Analysis Results:
 {json.dumps(results, indent=2, default=str)}
                         """
@@ -1007,7 +1056,8 @@ Raw Analysis Results:
                             "📄 Download Full Report",
                             data=report_data,
                             file_name=f"eeg_analysis_{subject_id}_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                            mime="text/plain"
+                            mime="text/plain",
+                            use_container_width=True
                         )
                         
                     except Exception as e:
@@ -1093,7 +1143,8 @@ Results:
                         "📄 Download Analysis Report",
                         data=report_data,
                         file_name=f"real_eeg_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                        mime="text/plain"
+                        mime="text/plain",
+                        use_container_width=True
                     )
                     
                 except Exception as e:

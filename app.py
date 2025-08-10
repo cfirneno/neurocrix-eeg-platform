@@ -548,3 +548,4 @@ Raw Data:
                     st.error(f"Analysis failed: {str(e)}")
 
 if __name__ == "__main__":
+    main()

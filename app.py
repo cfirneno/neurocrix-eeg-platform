@@ -10,11 +10,11 @@ from datetime import datetime
 from typing import List, Dict, Tuple, Optional
 import matplotlib.pyplot as plt
 
-# Fixed password - no secrets needed
+# Fixed password
 CORRECT_PASSWORD = "NeuroCrix2024!"
 
 def check_password():
-    """Simple password check with hardcoded password"""
+    """Simple password check"""
     
     def password_entered():
         if st.session_state["password"] == CORRECT_PASSWORD:
@@ -25,11 +25,11 @@ def check_password():
 
     if "password_correct" not in st.session_state:
         st.text_input("🔐 Enter Password", type="password", on_change=password_entered, key="password")
-        st.write("*Password: NeuroCrix2024!*")
+        st.info("Password: NeuroCrix2024!")
         return False
     elif not st.session_state["password_correct"]:
         st.text_input("🔐 Enter Password", type="password", on_change=password_entered, key="password")
-        st.error("😞 Password incorrect. Try: NeuroCrix2024!")
+        st.error("❌ Incorrect. Password is: NeuroCrix2024!")
         return False
     else:
         return True
@@ -40,101 +40,166 @@ try:
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
-    st.warning("scipy not installed - using basic FFT for frequency analysis")
 
-class ZIPDataLoader:
-    """Load EEG data from ZIP files in GitHub repo"""
+class DataLoader:
+    """Load EEG data from Google Drive and GitHub"""
     
     def __init__(self):
-        # UPDATE THIS WITH YOUR ACTUAL GITHUB USERNAME
+        # YOUR GITHUB USERNAME HERE
         self.github_user = "YOUR_GITHUB_USERNAME"  # <-- CHANGE THIS!
         self.repo = "neurocrix-eeg-platform"
-        self.branch = "main"
         
-        # Your ZIP files
+        # YOUR GOOGLE DRIVE FILE ID HERE
+        self.google_drive_file_id = "YOUR_GOOGLE_DRIVE_FILE_ID"  # <-- CHANGE THIS!
+        
+        # Dataset configuration
         self.datasets = {
             "alcohol": {
-                "name": "EEG Alcoholism Dataset",
+                "name": "EEG Alcoholism Dataset (300MB)",
                 "filename": "EEG-Alcohol-Kag.zip",
-                "description": "EEG recordings comparing alcoholic vs control subjects"
+                "description": "Large dataset comparing alcoholic vs control subjects",
+                "source": "google_drive"  # Uses Google Drive
             },
             "psychiatric": {
                 "name": "Psychiatric Disorders EEG",
                 "filename": "Psidis-Kag.zip",
-                "description": "EEG data for psychiatric disorder analysis"
+                "description": "EEG data for psychiatric disorder analysis",
+                "source": "github"  # Uses GitHub
             }
         }
     
     @st.cache_data(ttl=3600, show_spinner=False)
-    def load_zip_from_github(_self, dataset_key: str) -> pd.DataFrame:
-        """Download and extract ZIP file from GitHub"""
+    def load_dataset(_self, dataset_key: str) -> pd.DataFrame:
+        """Load dataset from appropriate source"""
         
         if dataset_key not in _self.datasets:
             st.error(f"Unknown dataset: {dataset_key}")
             return None
         
         dataset = _self.datasets[dataset_key]
-        filename = dataset["filename"]
         
-        # GitHub raw URL
-        url = f"https://github.com/{_self.github_user}/{_self.repo}/raw/{_self.branch}/{filename}"
+        # Choose source based on dataset
+        if dataset["source"] == "google_drive":
+            return _self.load_from_google_drive(dataset)
+        else:
+            return _self.load_from_github(dataset)
+    
+    def load_from_google_drive(self, dataset: Dict) -> pd.DataFrame:
+        """Load large file from Google Drive"""
         
-        st.info(f"📥 Loading {dataset['name']}...")
+        st.info(f"📥 Downloading {dataset['name']} from Google Drive...")
+        
+        # Google Drive direct download URL
+        url = f"https://drive.google.com/uc?export=download&id={self.google_drive_file_id}"
         
         try:
-            # Download the ZIP file
+            # Download with confirmation handling for large files
+            session = requests.Session()
+            response = session.get(url, stream=True)
+            
+            # Check if we got a virus scan warning
+            if b"virus scan warning" in response.content[:1000]:
+                st.warning("Large file detected, bypassing Google Drive warning...")
+                
+                # Extract confirmation token
+                for key, value in response.cookies.items():
+                    if key.startswith('download_warning'):
+                        url = f"https://drive.google.com/uc?export=download&confirm={value}&id={self.google_drive_file_id}"
+                        response = session.get(url, stream=True)
+                        break
+            
+            # Download the file
+            total_size = int(response.headers.get('content-length', 0))
+            
+            if total_size > 0:
+                progress_bar = st.progress(0)
+                progress_text = st.empty()
+                
+                downloaded = 0
+                content = b""
+                
+                for chunk in response.iter_content(chunk_size=8192):
+                    content += chunk
+                    downloaded += len(chunk)
+                    progress = downloaded / total_size
+                    progress_bar.progress(progress)
+                    progress_text.text(f"Downloaded: {downloaded/1024/1024:.1f} MB / {total_size/1024/1024:.1f} MB")
+                
+                progress_bar.empty()
+                progress_text.empty()
+            else:
+                # No content length, download all at once
+                content = response.content
+            
+            # Extract ZIP
+            return self.extract_zip_data(content, dataset['name'])
+            
+        except Exception as e:
+            st.error(f"❌ Error downloading from Google Drive: {str(e)}")
+            st.info("Make sure: 1) File ID is correct, 2) File is shared with 'Anyone with link'")
+            return None
+    
+    def load_from_github(self, dataset: Dict) -> pd.DataFrame:
+        """Load smaller file from GitHub"""
+        
+        st.info(f"📥 Loading {dataset['name']} from GitHub...")
+        
+        # GitHub raw URL
+        url = f"https://github.com/{self.github_user}/{self.repo}/raw/main/{dataset['filename']}"
+        
+        try:
             response = requests.get(url, timeout=60)
             
             if response.status_code != 200:
                 st.error(f"❌ Failed to download from GitHub (HTTP {response.status_code})")
-                st.info(f"URL attempted: {url}")
-                st.warning("Please check: 1) GitHub username is correct, 2) File exists in repo, 3) Repo is public")
+                st.info("Make sure: 1) GitHub username is correct, 2) File exists in repo")
                 return None
             
-            # Open ZIP file
-            try:
-                zip_buffer = io.BytesIO(response.content)
-                with zipfile.ZipFile(zip_buffer, 'r') as zip_ref:
-                    # List all files
-                    file_list = zip_ref.namelist()
-                    st.success(f"✅ Found {len(file_list)} files in {filename}")
-                    
-                    # Find CSV files
-                    csv_files = [f for f in file_list if f.lower().endswith('.csv')]
-                    
-                    if csv_files:
-                        # Read the first CSV file
-                        csv_file = csv_files[0]
-                        st.info(f"📄 Reading: {csv_file}")
-                        
-                        with zip_ref.open(csv_file) as f:
-                            df = pd.read_csv(f)
-                            st.success(f"✅ Loaded {len(df):,} records × {len(df.columns)} columns")
-                            return df
-                    else:
-                        st.error("❌ No CSV files found in ZIP")
-                        st.info(f"Files found: {file_list[:5]}...")
-                        return None
-                        
-            except zipfile.BadZipFile:
-                st.error("❌ Invalid ZIP file - might be corrupted or not a ZIP")
-                return None
+            # Extract ZIP
+            return self.extract_zip_data(response.content, dataset['name'])
+            
+        except Exception as e:
+            st.error(f"❌ Error downloading from GitHub: {str(e)}")
+            return None
+    
+    def extract_zip_data(self, content: bytes, dataset_name: str) -> pd.DataFrame:
+        """Extract data from ZIP content"""
+        
+        try:
+            zip_buffer = io.BytesIO(content)
+            
+            with zipfile.ZipFile(zip_buffer, 'r') as zip_ref:
+                file_list = zip_ref.namelist()
+                st.success(f"✅ Extracted {len(file_list)} files from {dataset_name}")
                 
-        except requests.RequestException as e:
-            st.error(f"❌ Network error: {str(e)}")
+                # Find CSV files
+                csv_files = [f for f in file_list if f.lower().endswith('.csv')]
+                
+                if csv_files:
+                    # Read first CSV
+                    with zip_ref.open(csv_files[0]) as f:
+                        df = pd.read_csv(f)
+                        st.success(f"✅ Loaded {len(df):,} records × {len(df.columns)} columns")
+                        return df
+                else:
+                    st.error("❌ No CSV files found in ZIP")
+                    return None
+                    
+        except zipfile.BadZipFile:
+            st.error("❌ Invalid ZIP file")
             return None
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"❌ Error extracting ZIP: {str(e)}")
             return None
 
-class EEGProcessor:
-    """Process EEG data for criticality analysis"""
+class EEGAnalyzer:
+    """Analyze EEG data for criticality"""
     
     def __init__(self):
         self.fs = 256  # Default sampling rate
     
     def prepare_data(self, df: pd.DataFrame) -> Tuple[np.ndarray, Dict]:
-        """Prepare DataFrame for analysis"""
+        """Prepare data for analysis"""
         
         info = {
             "total_records": len(df),
@@ -142,8 +207,8 @@ class EEGProcessor:
             "has_labels": False
         }
         
-        # Check for label columns
-        label_cols = ['y', 'label', 'class', 'target', 'condition', 'diagnosis']
+        # Find label column
+        label_cols = ['y', 'label', 'class', 'target', 'condition']
         label_col = None
         
         for col in label_cols:
@@ -154,28 +219,27 @@ class EEGProcessor:
                 break
         
         if label_col:
-            # Separate features and labels
+            # Extract features and labels
             feature_cols = [c for c in df.columns if c != label_col]
             signals = df[feature_cols].values.T
             
-            # Get label info
             labels = df[label_col].values
             unique_labels = np.unique(labels)
             info["labels"] = labels
             info["unique_labels"] = unique_labels.tolist()
             info["n_classes"] = len(unique_labels)
             
-            # Check for seizures (usually label=1)
+            # Check for seizures
             if 1 in unique_labels:
                 seizure_count = np.sum(labels == 1)
                 info["has_seizures"] = True
                 info["seizure_count"] = int(seizure_count)
                 info["seizure_percentage"] = seizure_count / len(labels) * 100
         else:
-            # No labels - all columns are features
+            # All columns are features
             signals = df.values.T
         
-        # Ensure correct shape (channels × samples)
+        # Ensure correct shape
         if signals.shape[0] > signals.shape[1]:
             signals = signals.T
         
@@ -185,17 +249,15 @@ class EEGProcessor:
         return signals, info
     
     def extract_features(self, signals: np.ndarray, window_s: float = 2.0) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract frequency band features"""
+        """Extract frequency features"""
         
         n_channels, n_samples = signals.shape
         fs = self.fs
         
-        # Adjust window for short signals
-        max_window = n_samples // 2
-        window = min(int(window_s * fs), max_window)
+        # Window parameters
+        window = min(int(window_s * fs), n_samples // 2)
         step = window // 2
         
-        # Number of windows
         if n_samples < window:
             n_windows = 1
             window = n_samples
@@ -213,19 +275,19 @@ class EEGProcessor:
             end = min(start + window, n_samples)
             
             for ch in range(n_channels):
-                signal_segment = signals[ch, start:end]
+                segment = signals[ch, start:end]
                 
-                # FFT for frequency analysis
-                fft = np.fft.fft(signal_segment)
-                freqs = np.fft.fftfreq(len(signal_segment), 1/fs)
+                # FFT
+                fft = np.fft.fft(segment)
+                freqs = np.fft.fftfreq(len(segment), 1/fs)
                 power = np.abs(fft) ** 2
                 
-                # Positive frequencies only
+                # Positive frequencies
                 pos_mask = freqs > 0
                 freqs_pos = freqs[pos_mask]
                 power_pos = power[pos_mask]
                 
-                # Extract band powers
+                # Band powers
                 for b, (low, high) in enumerate(bands):
                     band_mask = (freqs_pos >= low) & (freqs_pos <= high)
                     if np.any(band_mask):
@@ -235,11 +297,11 @@ class EEGProcessor:
     
     def compute_criticality(self, features: np.ndarray, times: np.ndarray, 
                            threshold: float = 0.3, has_seizures: bool = False) -> Dict:
-        """Compute brain criticality using logistic map"""
+        """Compute criticality using logistic map"""
         
         n_windows, n_channels, n_bands = features.shape
         
-        # Normalize features
+        # Normalize
         features_norm = np.zeros_like(features)
         for b in range(n_bands):
             band_data = features[:, :, b]
@@ -248,19 +310,16 @@ class EEGProcessor:
             if std_val > 0:
                 features_norm[:, :, b] = (band_data - mean_val) / std_val
         
-        # Initialize logistic map
+        # Logistic map
         r_params = np.full(n_bands, 3.0)
         r_evolution = []
         state_evolution = []
         critical_windows = []
         
-        # Sensitivity based on data type
         sensitivity = 0.15 if has_seizures else 0.1
         chaos_threshold = 3.5 if has_seizures else 3.57
         
-        # Process each window
         for w in range(n_windows):
-            # Calculate band activities
             for b in range(n_bands):
                 activity = np.mean(np.abs(features_norm[w, :, b]))
                 
@@ -269,11 +328,9 @@ class EEGProcessor:
                 else:
                     r_params[b] = max(2.5, r_params[b] - 0.02)
             
-            # Mean R parameter
             r_mean = np.mean(r_params)
             r_evolution.append(r_mean)
             
-            # Determine state
             if r_mean > chaos_threshold:
                 state = "critical"
                 critical_windows.append(w)
@@ -284,7 +341,6 @@ class EEGProcessor:
             
             state_evolution.append(state)
         
-        # Calculate metrics
         criticality_ratio = len(critical_windows) / max(1, n_windows)
         
         if criticality_ratio > 0.4:
@@ -320,7 +376,7 @@ class EEGProcessor:
 
 def main():
     st.set_page_config(
-        page_title="🧠 EEG Criticality Analysis",
+        page_title="🧠 EEG Analysis Platform",
         page_icon="🧠",
         layout="wide"
     )
@@ -334,13 +390,13 @@ def main():
     st.markdown("**Analyze Real EEG Data from Kaggle Datasets**")
     
     # Initialize
-    loader = ZIPDataLoader()
-    processor = EEGProcessor()
+    loader = DataLoader()
+    analyzer = EEGAnalyzer()
     
-    # Sidebar
-    with st.sidebar:
-        st.header("⚙️ Configuration")
-        
+    # Main layout
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
         # Dataset selection
         dataset_key = st.selectbox(
             "📊 Select Dataset",
@@ -349,71 +405,63 @@ def main():
         )
         
         if dataset_key:
-            st.info(loader.datasets[dataset_key]["description"])
+            dataset = loader.datasets[dataset_key]
+            
+            # Show source
+            if dataset["source"] == "google_drive":
+                st.info(f"📁 **{dataset['name']}** - Stored on Google Drive (Large file)")
+            else:
+                st.info(f"📁 **{dataset['name']}** - Stored on GitHub")
+            
+            st.caption(dataset["description"])
         
-        # Parameters
-        st.subheader("🔧 Analysis Parameters")
-        window_size = st.slider("Window Size (sec)", 0.5, 5.0, 2.0)
-        threshold = st.slider("Threshold", 0.1, 0.5, 0.3)
+        # Analysis parameters
+        col1a, col1b = st.columns(2)
+        with col1a:
+            window_size = st.slider("Window Size (seconds)", 0.5, 5.0, 2.0)
+        with col1b:
+            threshold = st.slider("Threshold", 0.1, 0.5, 0.3)
         
-        # Display options
-        st.subheader("📈 Display Options")
-        show_raw = st.checkbox("Show Raw Data", False)
-        show_evolution = st.checkbox("Show R Evolution", True)
-        show_bands = st.checkbox("Show Frequency Bands", True)
-    
-    # Main content
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.header("📊 Data Analysis")
-        
+        # Analyze button
         if st.button("🚀 Load & Analyze Dataset", type="primary", use_container_width=True):
             
             # Load data
-            df = loader.load_zip_from_github(dataset_key)
+            df = loader.load_dataset(dataset_key)
             
             if df is not None:
-                # Data overview
-                st.subheader("📋 Dataset Overview")
-                col1a, col1b, col1c = st.columns(3)
-                
-                with col1a:
+                # Overview
+                st.subheader("📊 Dataset Overview")
+                c1, c2, c3 = st.columns(3)
+                with c1:
                     st.metric("Records", f"{len(df):,}")
-                with col1b:
+                with c2:
                     st.metric("Features", len(df.columns))
-                with col1c:
+                with c3:
                     st.metric("Size (MB)", f"{df.memory_usage().sum() / 1024**2:.1f}")
-                
-                # Show raw data
-                if show_raw:
-                    with st.expander("View Raw Data"):
-                        st.dataframe(df.head(100))
                 
                 # Prepare data
                 with st.spinner("🔬 Processing EEG data..."):
-                    signals, data_info = processor.prepare_data(df)
+                    signals, data_info = analyzer.prepare_data(df)
                 
-                # Display data info
+                # Show data info
                 if data_info.get("has_labels"):
-                    st.info(f"""
-                    **Labeled Data Detected:**
-                    - Label Column: `{data_info.get('label_column')}`
+                    st.success(f"""
+                    ✅ **Labeled Data Detected**
                     - Classes: {data_info.get('n_classes')}
                     - Labels: {data_info.get('unique_labels')}
                     """)
                     
                     if data_info.get("has_seizures"):
                         st.warning(f"""
-                        ⚡ **Seizure Data Detected!**
+                        ⚡ **Seizure Data Found!**
                         - Seizure Records: {data_info.get('seizure_count'):,}
                         - Percentage: {data_info.get('seizure_percentage'):.1f}%
                         """)
                 
                 # Analyze
                 with st.spinner("🧠 Computing brain criticality..."):
-                    times, features = processor.extract_features(signals, window_size)
-                    results = processor.compute_criticality(
+                    times, features = analyzer.extract_features(signals, window_size)
+                    results = analyzer.compute_criticality(
                         features, times, threshold, 
                         data_info.get("has_seizures", False)
                     )
@@ -421,95 +469,83 @@ def main():
                 # Results
                 st.success("✅ Analysis Complete!")
                 
-                # Metrics
-                st.subheader("📊 Results")
-                col2a, col2b, col2c, col2d = st.columns(4)
+                st.subheader("📈 Results")
+                r1, r2, r3, r4 = st.columns(4)
                 
-                with col2a:
+                with r1:
                     crit = results['criticality_ratio']
-                    color = "🔴" if crit > 0.4 else "🟡" if crit > 0.2 else "🟢"
-                    st.metric(f"{color} Criticality", f"{crit:.1%}")
+                    if crit > 0.4:
+                        st.metric("🔴 Criticality", f"{crit:.1%}")
+                    elif crit > 0.2:
+                        st.metric("🟡 Criticality", f"{crit:.1%}")
+                    else:
+                        st.metric("🟢 Criticality", f"{crit:.1%}")
                 
-                with col2b:
+                with r2:
                     st.metric("State", results['final_state'])
                 
-                with col2c:
+                with r3:
                     st.metric("Critical", f"{results['critical_windows']}/{results['total_windows']}")
                 
-                with col2d:
+                with r4:
                     st.metric("Mean R", f"{results['mean_r']:.3f}")
                 
-                # Visualizations
-                if show_evolution or show_bands:
-                    fig, axes = plt.subplots(
-                        1 + show_bands, 1,
-                        figsize=(12, 4 * (1 + show_bands))
-                    )
-                    
-                    if not show_bands:
-                        axes = [axes]
-                    
-                    # R parameter evolution
-                    if show_evolution:
-                        ax = axes[0]
-                        colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red'
-                                 for s in results['state_evolution']]
-                        ax.scatter(results['times'], results['r_evolution'], c=colors, s=50)
-                        ax.axhline(y=3.57, color='red', linestyle='--', alpha=0.5, label='Chaos')
-                        ax.set_xlabel('Time (s)')
-                        ax.set_ylabel('R Parameter')
-                        ax.set_title('Brain State Evolution')
-                        ax.legend()
-                        ax.grid(True, alpha=0.3)
-                    
-                    # Frequency bands
-                    if show_bands:
-                        ax = axes[-1]
-                        bands = ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma']
-                        values = [results['band_statistics'][b.lower()]['mean'] for b in bands]
-                        colors = ['purple', 'blue', 'green', 'orange', 'red']
-                        bars = ax.bar(bands, values, color=colors, alpha=0.7)
-                        ax.set_ylabel('Power (μV)')
-                        ax.set_title('Frequency Band Analysis')
-                        ax.grid(True, alpha=0.3, axis='y')
-                        
-                        for bar, val in zip(bars, values):
-                            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
-                                   f'{val:.1f}', ha='center', va='bottom')
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig)
+                # Visualization
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
                 
-                # Generate report
+                # R evolution
+                colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red'
+                         for s in results['state_evolution']]
+                ax1.scatter(results['times'], results['r_evolution'], c=colors, s=50)
+                ax1.axhline(y=3.57, color='red', linestyle='--', alpha=0.5)
+                ax1.set_xlabel('Time (s)')
+                ax1.set_ylabel('R Parameter')
+                ax1.set_title('Brain State Evolution')
+                ax1.grid(True, alpha=0.3)
+                
+                # Frequency bands
+                bands = ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma']
+                values = [results['band_statistics'][b.lower()]['mean'] for b in bands]
+                bars = ax2.bar(bands, values, color=['purple', 'blue', 'green', 'orange', 'red'], alpha=0.7)
+                ax2.set_ylabel('Power (μV)')
+                ax2.set_title('Frequency Bands')
+                ax2.grid(True, alpha=0.3, axis='y')
+                
+                for bar, val in zip(bars, values):
+                    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                           f'{val:.1f}', ha='center', va='bottom')
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Report
                 report = f"""
-## Analysis Report
-**Dataset:** {loader.datasets[dataset_key]['name']}
+## EEG Analysis Report
+**Dataset:** {dataset['name']}
 **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ### Results
-- **Criticality:** {results['criticality_ratio']:.1%}
-- **State:** {results['final_state']}
-- **Critical Episodes:** {results['critical_windows']}/{results['total_windows']}
-- **Mean R:** {results['mean_r']:.3f}
-- **Chaos:** {results['chaos_percentage']:.1f}%
+- Criticality: {results['criticality_ratio']:.1%}
+- State: {results['final_state']}
+- Critical Episodes: {results['critical_windows']}/{results['total_windows']}
+- Mean R: {results['mean_r']:.3f}
+- Chaos: {results['chaos_percentage']:.1f}%
 
-### Frequency Bands (μV)
-- Delta: {results['band_statistics']['delta']['mean']:.1f}
-- Theta: {results['band_statistics']['theta']['mean']:.1f}
-- Alpha: {results['band_statistics']['alpha']['mean']:.1f}
-- Beta: {results['band_statistics']['beta']['mean']:.1f}
-- Gamma: {results['band_statistics']['gamma']['mean']:.1f}
+### Frequency Bands
+- Delta: {results['band_statistics']['delta']['mean']:.1f} μV
+- Theta: {results['band_statistics']['theta']['mean']:.1f} μV
+- Alpha: {results['band_statistics']['alpha']['mean']:.1f} μV
+- Beta: {results['band_statistics']['beta']['mean']:.1f} μV
+- Gamma: {results['band_statistics']['gamma']['mean']:.1f} μV
 """
                 
                 if data_info.get("has_seizures"):
                     report += f"""
 ### Seizure Analysis
-- **Seizure Records:** {data_info.get('seizure_count'):,}
-- **Percentage:** {data_info.get('seizure_percentage'):.1f}%
-- **Correlation:** High criticality {'detected' if results['criticality_ratio'] > 0.3 else 'not detected'}
+- Seizure Records: {data_info.get('seizure_count'):,}
+- Percentage: {data_info.get('seizure_percentage'):.1f}%
 """
                 
-                # Download button
                 st.download_button(
                     "📄 Download Report",
                     data=report,
@@ -518,59 +554,58 @@ def main():
                 )
     
     with col2:
-        st.header("ℹ️ Information")
+        st.header("⚙️ Setup")
         
-        with st.expander("Setup Instructions", expanded=True):
-            st.markdown("""
-            ### ⚠️ IMPORTANT: Update GitHub Username
+        with st.expander("🔧 Configuration Required", expanded=True):
+            st.error("""
+            **MUST UPDATE:**
             
-            1. **Edit line 46 in the code:**
-               ```python
-               self.github_user = "YOUR_GITHUB_USERNAME"
-               ```
-               Replace with your actual GitHub username!
+            1. **Line 46 - GitHub Username:**
+            ```python
+            self.github_user = "YOUR_GITHUB_USERNAME"
+            ```
             
-            2. **Ensure ZIP files are in your repo:**
-               - `EEG-Alcohol-Kag.zip`
-               - `Psidis-Kag.zip`
+            2. **Line 50 - Google Drive File ID:**
+            ```python
+            self.google_drive_file_id = "YOUR_FILE_ID"
+            ```
             
-            3. **Repository must be public**
-            
-            ### Password
-            - Password is: **NeuroCrix2024!**
+            **How to get File ID:**
+            - Google Drive link: 
+            `drive.google.com/file/d/ABC123/view`
+            - File ID is: `ABC123`
             """)
         
-        with st.expander("About the Datasets"):
+        with st.expander("📊 Dataset Info"):
             st.markdown("""
-            ### EEG Alcoholism Dataset
-            - Compares alcoholic vs control subjects
-            - Multiple EEG recordings per subject
-            - Useful for addiction studies
+            ### Files Required:
             
-            ### Psychiatric Disorders EEG
-            - Various psychiatric conditions
-            - Labeled data for classification
-            - Useful for mental health research
+            **Google Drive:**
+            - `EEG-Alcohol-Kag.zip` (300MB)
+            - Too large for GitHub
+            
+            **GitHub Repo:**
+            - `Psidis-Kag.zip` (<25MB)
+            - Small enough for GitHub
             """)
         
-        with st.expander("Understanding Results"):
+        with st.expander("❓ Troubleshooting"):
             st.markdown("""
-            ### Criticality Levels
-            - 🟢 **<20%**: Stable brain state
-            - 🟡 **20-40%**: Transitional state
-            - 🔴 **>40%**: Critical/unstable state
+            ### Common Issues:
             
-            ### R Parameter
-            - **<3.0**: Very stable
-            - **3.0-3.57**: Edge of chaos
-            - **>3.57**: Chaotic dynamics
+            **Google Drive Error:**
+            - Make sure file is shared
+            - Set to "Anyone with link"
+            - Check File ID is correct
             
-            ### Frequency Bands
-            - **Delta (0.5-4 Hz)**: Deep sleep, pathology
-            - **Theta (4-8 Hz)**: Drowsiness
-            - **Alpha (8-13 Hz)**: Relaxed, eyes closed
-            - **Beta (13-30 Hz)**: Active thinking
-            - **Gamma (30-50 Hz)**: Cognitive processing
+            **GitHub Error:**
+            - Check username is correct
+            - Ensure repo is public
+            - File must be in main branch
+            
+            **Password:**
+            - `NeuroCrix2024!`
+            - Case sensitive!
             """)
 
 if __name__ == "__main__":

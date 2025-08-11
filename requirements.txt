@@ -4,4 +4,4 @@ pandas>=1.3.0
 matplotlib>=3.5.0
 scipy>=1.7.0
 requests>=2.25.0
-
+pyedflib>=0.1.30

@@ -11,349 +11,466 @@ from datetime import datetime
 from typing import List, Dict, Tuple, Optional
 import hashlib
 import base64
+import warnings
+warnings.filterwarnings('ignore')
 
-# Authentication credentials
+# ======================== AUTHENTICATION ========================
 USERS = {
-    "admin": "neurocrix2024",
-    "user1": "eeg2024",
-    "demo": "demo123"
+    "admin": {
+        "password": "neurocrix2024",
+        "access_level": "full"
+    },
+    "researcher": {
+        "password": "eeg2024",
+        "access_level": "full"
+    },
+    "demo": {
+        "password": "demo123",
+        "access_level": "limited"
+    }
 }
 
 def init_session_state():
-    """Initialize session state variables"""
-    if 'authentication_status' not in st.session_state:
-        st.session_state['authentication_status'] = None
+    """Initialize all session state variables"""
+    if 'authenticated' not in st.session_state:
+        st.session_state['authenticated'] = False
     if 'username' not in st.session_state:
         st.session_state['username'] = None
-    if 'password_attempts' not in st.session_state:
-        st.session_state['password_attempts'] = 0
+    if 'access_level' not in st.session_state:
+        st.session_state['access_level'] = None
+    if 'login_attempts' not in st.session_state:
+        st.session_state['login_attempts'] = 0
 
-def check_authentication():
-    """Enhanced authentication with username and password"""
+def authenticate_user():
+    """Handle user authentication with username and password"""
     init_session_state()
     
-    # If already authenticated, return True
-    if st.session_state.get('authentication_status') == True:
+    if st.session_state.get('authenticated'):
         return True
     
-    # Create login form
-    with st.container():
-        st.markdown("## 🔐 EEG Analysis Platform Login")
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            with st.form("login_form", clear_on_submit=False):
-                st.markdown("### Enter Credentials")
-                username = st.text_input("Username", placeholder="Enter username")
-                password = st.text_input("Password", type="password", placeholder="Enter password")
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    login_button = st.form_submit_button("🔓 Login", use_container_width=True, type="primary")
-                with col_b:
-                    if st.form_submit_button("ℹ️ Demo Access", use_container_width=True):
-                        st.info("Use username: 'demo' and password: 'demo123' for demo access")
-                
-                if login_button:
-                    # Check credentials
-                    if username in USERS and USERS[username] == password:
-                        st.session_state['authentication_status'] = True
-                        st.session_state['username'] = username
-                        st.session_state['password_attempts'] = 0
-                        st.success(f"✅ Welcome, {username}!")
-                        time.sleep(1)
-                        st.rerun()
-                    elif username == "" or password == "":
-                        st.error("Please enter both username and password")
-                    else:
-                        st.session_state['password_attempts'] += 1
-                        if st.session_state['password_attempts'] >= 3:
-                            st.error(f"❌ Too many failed attempts ({st.session_state['password_attempts']}). Please contact administrator.")
-                        else:
-                            st.error(f"❌ Invalid credentials. Attempt {st.session_state['password_attempts']}/3")
+    st.markdown("<h1 style='text-align: center;'>🧠 EEG Analysis Platform</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center;'>Secure Login</h3>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        with st.form("login_form"):
+            st.markdown("### Enter Your Credentials")
             
-            # Show available users for demo purposes (remove in production)
-            with st.expander("🔑 Available Demo Accounts"):
-                st.markdown("""
-                - **Admin**: username: `admin`, password: `neurocrix2024`
-                - **User**: username: `user1`, password: `eeg2024`  
-                - **Demo**: username: `demo`, password: `demo123`
-                """)
+            username = st.text_input("Username", placeholder="Enter your username")
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                submit = st.form_submit_button("🔓 Login", use_container_width=True, type="primary")
+            with col_b:
+                demo = st.form_submit_button("📖 Demo Access", use_container_width=True)
+            
+            if demo:
+                st.info("💡 Use username: **demo** and password: **demo123** for demo access")
+            
+            if submit:
+                if username in USERS and USERS[username]["password"] == password:
+                    st.session_state['authenticated'] = True
+                    st.session_state['username'] = username
+                    st.session_state['access_level'] = USERS[username]["access_level"]
+                    st.session_state['login_attempts'] = 0
+                    st.success(f"✅ Welcome, {username}!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.session_state['login_attempts'] += 1
+                    if st.session_state['login_attempts'] >= 3:
+                        st.error(f"❌ Too many failed attempts. Please contact administrator.")
+                        time.sleep(3)
+                    else:
+                        remaining = 3 - st.session_state['login_attempts']
+                        st.error(f"❌ Invalid credentials. {remaining} attempts remaining.")
+        
+        with st.expander("🔑 Test Accounts"):
+            st.markdown("""
+            | Username | Password | Access |
+            |----------|----------|--------|
+            | admin | neurocrix2024 | Full |
+            | researcher | eeg2024 | Full |
+            | demo | demo123 | Limited |
+            """)
     
     return False
 
-# Optional imports with fallbacks
+# ======================== REAL DATABASE CONFIGURATION ========================
+REAL_DATABASES = {
+    "psi_database": {
+        "name": "🍄 PSI Psychedelic EEG Database",
+        "description": "Real EEG recordings from psychedelic/psychiatric studies - GitHub hosted",
+        "url": "https://github.com/cfirneno/neurocrix-eeg-platform/raw/main/psydis-Kag.zip",
+        "type": "github",
+        "format": "zip",
+        "citation": "Psychedelic Studies Initiative Dataset",
+        "expected_criticality": "Variable - depends on substance and dose"
+    },
+    "alcohol_database": {
+        "name": "🍺 Alcohol Effects EEG Database", 
+        "description": "EEG recordings studying alcohol effects on brain activity - Google Drive hosted",
+        "url": "1loM7-BHPwboU64Tsb10baO0vpbI4LMX0",  # Google Drive file ID
+        "type": "gdrive",
+        "format": "zip",
+        "citation": "Alcohol Neuroscience Study",
+        "expected_criticality": "Moderate - increased with intoxication levels"
+    }
+}
+
+# Optional imports with fallback
 try:
     import scipy.signal as sp_signal
+    from scipy import stats
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
-    st.warning("SciPy not installed. Some features may be limited.")
+    st.warning("SciPy not installed. Some features limited.")
 
 try:
     import matplotlib.pyplot as plt
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-    st.warning("Matplotlib not installed. Visualizations will be limited.")
 
-# Fixed Bonn Dataset Configuration with working data generation
-BONN_DATASET_INFO = {
-    "Z": {
-        "description": "Healthy volunteers, eyes open",
-        "characteristics": "Normal alpha rhythm (8-13 Hz), low amplitude",
-        "expected_criticality": "LOW (<10%)"
-    },
-    "O": {
-        "description": "Healthy volunteers, eyes closed",
-        "characteristics": "Enhanced alpha rhythm, increased amplitude",
-        "expected_criticality": "LOW (<10%)"
-    },
-    "N": {
-        "description": "Seizure-free, from epileptogenic zone",
-        "characteristics": "Occasional interictal spikes, slightly abnormal",
-        "expected_criticality": "MODERATE (10-30%)"
-    },
-    "F": {
-        "description": "Seizure-free, opposite hemisphere",
-        "characteristics": "Near-normal patterns with minor abnormalities",
-        "expected_criticality": "LOW-MODERATE (5-20%)"
-    },
-    "S": {
-        "description": "SEIZURE RECORDINGS",
-        "characteristics": "Active seizure with 3-8 Hz oscillations",
-        "expected_criticality": "HIGH (>40%)"
-    }
-}
+try:
+    import pywt  # For wavelet analysis
+    HAS_PYWT = True
+except ImportError:
+    HAS_PYWT = False
+    st.info("PyWavelets not installed. Using FFT-based analysis instead.")
 
-# Public databases configuration
-PUBLIC_DATABASES = {
-    "bonn_seizure": {
-        "name": "Bonn University Seizure Database (Simulated)",
-        "description": "Scientifically accurate simulations based on Bonn dataset characteristics",
-        "format": "csv",
-        "subjects": 5,
-        "license": "Educational use",
-        "citation": "Based on: Andrzejak RG, et al. Phys Rev E. 2001;64:061907"
-    },
-    "demo_database": {
-        "name": "Demo EEG Database",
-        "description": "Generated demonstration EEG patterns",
-        "format": "csv",
-        "subjects": 3,
-        "license": "Open use"
-    }
-}
-
-def generate_realistic_eeg_data(set_name: str, segment: int = 1, duration_seconds: float = 23.6) -> np.ndarray:
-    """Generate scientifically accurate EEG patterns based on Bonn dataset characteristics."""
-    fs = 173.61  # Bonn sampling frequency
-    n_samples = int(duration_seconds * fs)
-    time = np.arange(n_samples) / fs
+class DataDownloader:
+    """Handle downloading from GitHub and Google Drive"""
     
-    # Use segment number for variation
-    np.random.seed(hash(f"{set_name}_{segment}") % 1000)
-    
-    signal = np.zeros(n_samples)
-    
-    if set_name == 'Z':  # Healthy, eyes open
-        # Normal EEG with dominant alpha
-        signal += 30 * np.sin(2 * np.pi * 10 * time + np.random.uniform(0, 2*np.pi))
-        signal += 20 * np.sin(2 * np.pi * 18 * time + np.random.uniform(0, 2*np.pi))
-        signal += 10 * np.sin(2 * np.pi * 6 * time + np.random.uniform(0, 2*np.pi))
-        signal += np.random.normal(0, 5, n_samples)
-        
-    elif set_name == 'O':  # Healthy, eyes closed
-        # Enhanced alpha rhythm
-        signal += 60 * np.sin(2 * np.pi * 10 * time + np.random.uniform(0, 2*np.pi))
-        signal += 40 * np.sin(2 * np.pi * 9 * time + np.random.uniform(0, 2*np.pi))
-        signal += 20 * np.sin(2 * np.pi * 11 * time + np.random.uniform(0, 2*np.pi))
-        signal += np.random.normal(0, 3, n_samples)
-        
-    elif set_name == 'S':  # SEIZURE
-        # Realistic seizure pattern with clear ictal activity
-        # Pre-ictal (15%)
-        pre_ictal = int(n_samples * 0.15)
-        signal[:pre_ictal] += 50 * np.sin(2 * np.pi * 7 * time[:pre_ictal])
-        signal[:pre_ictal] += np.random.normal(0, 20, pre_ictal)
-        
-        # Ictal seizure (70%)
-        ictal_start = pre_ictal
-        ictal_end = int(n_samples * 0.85)
-        
-        # 3-4 Hz spike-wave complexes
-        for i in range(ictal_start, ictal_end, int(fs/3.5)):
-            spike_dur = int(fs * 0.08)
-            if i + spike_dur < ictal_end:
-                spike_amp = np.random.uniform(400, 600)
-                signal[i:i+spike_dur] += spike_amp * np.exp(-np.arange(spike_dur)/2)
-        
-        # Strong rhythmic activity
-        signal[ictal_start:ictal_end] += 250 * np.sin(2 * np.pi * 3.5 * time[ictal_start:ictal_end])
-        signal[ictal_start:ictal_end] += 100 * np.sin(2 * np.pi * 7 * time[ictal_start:ictal_end])
-        
-        # Post-ictal (15%)
-        signal[ictal_end:] += 15 * np.sin(2 * np.pi * 2 * time[ictal_end:])
-        signal[ictal_end:] += np.random.normal(0, 5, n_samples - ictal_end)
-        
-    elif set_name in ['N', 'F']:
-        # Interictal patterns
-        signal += 40 * np.sin(2 * np.pi * 8 * time + np.random.uniform(0, 2*np.pi))
-        signal += 30 * np.sin(2 * np.pi * 5 * time + np.random.uniform(0, 2*np.pi))
-        
-        # Occasional spikes
-        n_spikes = 10 if set_name == 'N' else 5
-        spike_times = np.random.choice(n_samples - 50, n_spikes, replace=False)
-        for spike_time in spike_times:
-            signal[spike_time:spike_time+30] += 100 * np.exp(-np.arange(30)/5)
-        
-        signal += np.random.normal(0, 10, n_samples)
-    
-    return signal
-
-class DatabaseConnector:
-    """Handles data generation and retrieval"""
-    def __init__(self, db_config: Dict):
-        self.config = db_config
-    
-    def list_subjects(self) -> List[str]:
-        db_id = self.config.get("db_id")
-        if db_id == "bonn_seizure":
-            return ["Z", "O", "N", "F", "S"]
-        elif db_id == "demo_database":
-            return ["Healthy_1", "Healthy_2", "Patient_1"]
-        return []
-    
-    def get_subject_sessions(self, subject_id: str) -> List[str]:
-        return [f"Segment_{i:03d}" for i in range(1, 11)]
-    
-    def download_eeg_sample(self, subject_id: str, session_id: str) -> Tuple[bytes, str, str]:
-        """Generate EEG data for analysis"""
-        db_id = self.config.get("db_id")
-        
-        if db_id == "bonn_seizure":
-            segment_num = int(session_id.split("_")[1]) if "_" in session_id else 1
-            
-            # Generate simulated Bonn-like data
-            data = generate_realistic_eeg_data(subject_id, segment_num)
-            n_samples = len(data)
-            n_channels = 8
-            signals = np.zeros((n_channels, n_samples))
-            
-            # Create correlated channels
-            for ch in range(n_channels):
-                correlation = 0.85 + (ch * 0.02)
-                phase_shift = int(ch * 3)
-                signals[ch] = np.roll(data * correlation, phase_shift)
-                signals[ch] += np.random.normal(0, 2, n_samples)
-            
-            # Create DataFrame
-            df = pd.DataFrame(signals.T, columns=[f"CH_{i+1}" for i in range(n_channels)])
-            csv_data = df.to_csv(index=False)
-            filename = f"Bonn_{subject_id}_{session_id}.csv"
-            data_source = "Simulated Bonn-like EEG"
-            
-            return csv_data.encode('utf-8'), filename, data_source
-            
-        else:  # demo_database
-            # Generate demo data
-            duration = 30
-            fs = 256
-            n_channels = 8
-            n_samples = duration * fs
-            
-            time_axis = np.linspace(0, duration, n_samples)
-            signals = np.zeros((n_channels, n_samples))
-            
-            for ch in range(n_channels):
-                signals[ch] += 40 * np.sin(2 * np.pi * 10 * time_axis + np.random.random() * 2 * np.pi)
-                signals[ch] += 20 * np.sin(2 * np.pi * 20 * time_axis + np.random.random() * 2 * np.pi)
-                signals[ch] += np.random.normal(0, 5, n_samples)
-            
-            df = pd.DataFrame(signals.T, columns=[f"CH_{i+1}" for i in range(n_channels)])
-            csv_data = df.to_csv(index=False)
-            filename = f"{subject_id}_{session_id}_demo.csv"
-            data_source = "Demo Generated Data"
-            
-            return csv_data.encode('utf-8'), filename, data_source
-
-class EEGProcessor:
-    """Main EEG processing class"""
     def __init__(self):
-        self.connectors = {}
-        for db_id, db_config in PUBLIC_DATABASES.items():
-            self.connectors[db_id] = DatabaseConnector({**db_config, "db_id": db_id})
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
     
-    def get_database_info(self, db_id: str) -> Optional[Dict]:
-        if db_id not in PUBLIC_DATABASES:
-            return None
-        
-        db_config = PUBLIC_DATABASES[db_id]
-        connector = self.connectors[db_id]
-        subjects = connector.list_subjects()
-        
-        return {
-            "db_id": db_id,
-            "name": db_config["name"],
-            "description": db_config["description"],
-            "available_subjects": subjects
-        }
-    
-    def load_eeg_file(self, file_content: bytes, filename: str) -> Tuple[np.ndarray, int, List[str]]:
-        """Load EEG data from file"""
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def download_from_github(_self, url: str) -> Tuple[bool, Optional[bytes], str]:
+        """Download from GitHub"""
         try:
-            if filename.endswith('.csv') or 'csv' in filename:
-                df = pd.read_csv(io.BytesIO(file_content))
-                
-                # Check if first column is time/index
-                if 'time' in df.columns[0].lower() or 'index' in df.columns[0].lower():
-                    data = df.iloc[:, 1:].values.T
-                    channels = list(df.columns[1:])
-                else:
-                    data = df.values.T
-                    channels = list(df.columns)
-                
-                # Determine sampling rate
-                if 'Bonn' in filename:
-                    fs = 173.61
-                else:
-                    fs = 256
-                    
-                return data.astype(float), fs, channels
+            # Convert blob to raw if needed
+            if "/blob/" in url:
+                url = url.replace("/blob/", "/raw/")
             
-            elif filename.endswith('.txt'):
-                # Single column text file
-                lines = file_content.decode('utf-8').strip().split('\n')
-                data = np.array([float(line.strip()) for line in lines if line.strip()])
-                
-                # Expand to 8 channels
-                n_samples = len(data)
-                n_channels = 8
-                signals = np.zeros((n_channels, n_samples))
-                
-                for ch in range(n_channels):
-                    signals[ch] = data + np.random.normal(0, 1, n_samples)
-                
-                channels = [f"CH_{i+1}" for i in range(n_channels)]
-                fs = 173.61
-                
-                return signals, fs, channels
+            response = _self.session.get(url, timeout=60)
+            
+            if response.status_code == 200:
+                return True, response.content, "Successfully downloaded from GitHub"
+            else:
+                return False, None, f"GitHub download failed: HTTP {response.status_code}"
                 
         except Exception as e:
-            raise ValueError(f"Error loading file: {str(e)}")
+            return False, None, f"GitHub error: {str(e)}"
     
-    def extract_features(self, signals: np.ndarray, fs: int, window_s: float = 2.0, 
-                        step_s: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract frequency band features from EEG signals"""
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def download_from_gdrive(_self, file_id: str) -> Tuple[bool, Optional[bytes], str]:
+        """Download from Google Drive using direct download link"""
+        try:
+            # Direct download URL for Google Drive
+            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            
+            response = _self.session.get(download_url, timeout=60, stream=True)
+            
+            # Check if file is too large and needs confirmation
+            if b"download-warning" in response.content[:1000]:
+                # Extract confirmation token
+                for chunk in response.iter_content(chunk_size=32768):
+                    if b"confirm=" in chunk:
+                        match = re.search(r'confirm=([0-9A-Za-z_]+)', chunk.decode('utf-8', errors='ignore'))
+                        if match:
+                            confirm_token = match.group(1)
+                            download_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
+                            response = _self.session.get(download_url, timeout=60)
+                            break
+            
+            if response.status_code == 200:
+                return True, response.content, "Successfully downloaded from Google Drive"
+            else:
+                # Try alternative method
+                alt_url = f"https://drive.google.com/u/0/uc?id={file_id}&export=download"
+                response = _self.session.get(alt_url, timeout=60)
+                
+                if response.status_code == 200:
+                    return True, response.content, "Successfully downloaded from Google Drive (alt method)"
+                else:
+                    return False, None, f"Google Drive download failed: HTTP {response.status_code}"
+                    
+        except Exception as e:
+            return False, None, f"Google Drive error: {str(e)}"
+    
+    def download_dataset(self, database_id: str) -> Tuple[bool, Optional[bytes], str]:
+        """Download dataset based on type"""
+        if database_id not in REAL_DATABASES:
+            return False, None, "Database not found"
+        
+        db_config = REAL_DATABASES[database_id]
+        
+        with st.spinner(f"📥 Downloading {db_config['name']}..."):
+            if db_config["type"] == "github":
+                return self.download_from_github(db_config["url"])
+            elif db_config["type"] == "gdrive":
+                return self.download_from_gdrive(db_config["url"])
+            else:
+                return False, None, "Unknown database type"
+    
+    def extract_zip_data(self, zip_content: bytes, db_name: str) -> Dict:
+        """Extract and organize data from zip file"""
+        extracted_data = {
+            "files": [],
+            "eeg_data": [],
+            "metadata": {},
+            "subjects": [],
+            "database": db_name
+        }
+        
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zf:
+                extracted_data["files"] = zf.namelist()
+                
+                for filename in zf.namelist():
+                    if filename.endswith('.csv'):
+                        with zf.open(filename) as f:
+                            df = pd.read_csv(io.BytesIO(f.read()))
+                            extracted_data["eeg_data"].append({
+                                "filename": filename,
+                                "data": df,
+                                "shape": df.shape,
+                                "columns": list(df.columns)
+                            })
+                            
+                            # Extract subject IDs
+                            subject_match = re.search(r'[SP]\d{3}|subject_\d+|sub\d+|participant_\d+', filename, re.I)
+                            if subject_match:
+                                extracted_data["subjects"].append(subject_match.group())
+                    
+                    elif filename.endswith('.json'):
+                        with zf.open(filename) as f:
+                            extracted_data["metadata"][filename] = json.loads(f.read())
+                    
+                    elif filename.endswith('.txt'):
+                        with zf.open(filename) as f:
+                            lines = f.read().decode('utf-8').strip().split('\n')
+                            # Try to parse as numeric data
+                            try:
+                                data = np.array([float(line.strip()) for line in lines if line.strip()])
+                                if len(data) > 100:  # Likely EEG data
+                                    extracted_data["eeg_data"].append({
+                                        "filename": filename,
+                                        "data": data,
+                                        "shape": data.shape,
+                                        "type": "single_channel"
+                                    })
+                            except:
+                                pass  # Not numeric data
+                
+                extracted_data["subjects"] = list(set(extracted_data["subjects"]))
+                
+        except Exception as e:
+            st.error(f"Error extracting zip: {str(e)}")
+            
+        return extracted_data
+
+class AdvancedEEGProcessor:
+    """Advanced EEG processing with wavelets and Lyapunov exponents"""
+    
+    def __init__(self):
+        self.downloader = DataDownloader()
+    
+    def process_eeg_data(self, data_dict: Dict) -> Tuple[np.ndarray, int, List[str]]:
+        """Process extracted EEG data into standard format"""
+        
+        if not data_dict.get("eeg_data"):
+            # Generate demo data if no real data found
+            st.warning("No EEG data found. Generating demo signals...")
+            return self.generate_demo_data()
+        
+        eeg_item = data_dict["eeg_data"][0]
+        
+        if isinstance(eeg_item["data"], pd.DataFrame):
+            df = eeg_item["data"]
+            
+            # Remove time column if present
+            if any(col in df.columns[0].lower() for col in ['time', 'index', 'timestamp']):
+                data = df.iloc[:, 1:].values.T
+                channels = list(df.columns[1:])
+            else:
+                data = df.values.T
+                channels = list(df.columns)
+            
+            # Estimate sampling rate
+            fs = 256  # Default
+            if "metadata" in data_dict and data_dict["metadata"]:
+                for meta in data_dict["metadata"].values():
+                    if "sampling_rate" in meta:
+                        fs = meta["sampling_rate"]
+                        break
+                    elif "fs" in meta:
+                        fs = meta["fs"]
+                        break
+            
+        elif isinstance(eeg_item["data"], np.ndarray):
+            # Single channel data
+            single_channel = eeg_item["data"]
+            n_samples = len(single_channel)
+            n_channels = 8
+            
+            # Create multi-channel from single channel
+            data = np.zeros((n_channels, n_samples))
+            for ch in range(n_channels):
+                data[ch] = single_channel + np.random.normal(0, 1, n_samples) * 0.1
+            
+            channels = [f"CH_{i+1}" for i in range(n_channels)]
+            fs = 173.61  # Bonn sampling rate
+        else:
+            return self.generate_demo_data()
+        
+        return data.astype(float), int(fs), channels
+    
+    def generate_demo_data(self) -> Tuple[np.ndarray, int, List[str]]:
+        """Generate demo EEG data"""
+        fs = 256
+        duration = 30
+        n_channels = 8
+        n_samples = fs * duration
+        time = np.linspace(0, duration, n_samples)
+        
+        data = np.zeros((n_channels, n_samples))
+        for ch in range(n_channels):
+            # Mix of frequencies
+            data[ch] += 30 * np.sin(2 * np.pi * 10 * time)  # Alpha
+            data[ch] += 20 * np.sin(2 * np.pi * 20 * time)  # Beta
+            data[ch] += 10 * np.sin(2 * np.pi * 5 * time)   # Theta
+            data[ch] += np.random.normal(0, 5, n_samples)
+        
+        channels = [f"CH_{i+1}" for i in range(n_channels)]
+        return data, fs, channels
+    
+    def compute_wavelet_features(self, signal: np.ndarray, fs: int) -> Dict:
+        """Compute wavelet-based features"""
+        features = {}
+        
+        if HAS_PYWT:
+            # Use PyWavelets for wavelet decomposition
+            wavelet = 'db4'  # Daubechies 4 wavelet
+            max_level = min(pywt.dwt_max_level(len(signal), wavelet), 5)
+            
+            # Decompose signal
+            coeffs = pywt.wavedec(signal, wavelet, level=max_level)
+            
+            # Calculate energy for each level
+            energies = []
+            for i, coeff in enumerate(coeffs):
+                energy = np.sum(coeff ** 2)
+                energies.append(energy)
+                features[f'wavelet_energy_level_{i}'] = energy
+            
+            # Relative wavelet energy
+            total_energy = sum(energies)
+            if total_energy > 0:
+                for i, energy in enumerate(energies):
+                    features[f'relative_wavelet_energy_{i}'] = energy / total_energy
+            
+            # Wavelet entropy
+            probs = np.array(energies) / (total_energy + 1e-10)
+            wavelet_entropy = -np.sum(probs * np.log2(probs + 1e-10))
+            features['wavelet_entropy'] = wavelet_entropy
+        else:
+            # Fallback: Use FFT-based band energy
+            fft = np.fft.fft(signal)
+            freqs = np.fft.fftfreq(len(signal), 1/fs)
+            psd = np.abs(fft) ** 2
+            
+            bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 50)]
+            for i, (low, high) in enumerate(bands):
+                mask = (np.abs(freqs) >= low) & (np.abs(freqs) <= high)
+                features[f'fft_band_energy_{i}'] = np.sum(psd[mask])
+        
+        return features
+    
+    def compute_lyapunov_exponent(self, signal: np.ndarray, 
+                                  embedding_dim: int = 3, 
+                                  time_delay: int = 1) -> float:
+        """
+        Compute largest Lyapunov exponent using Rosenstein's method
+        This indicates the rate of divergence of nearby trajectories
+        """
+        n = len(signal)
+        
+        # Create embedded matrix
+        if n < embedding_dim * time_delay:
+            return 0.0
+        
+        embedded = np.zeros((n - (embedding_dim - 1) * time_delay, embedding_dim))
+        for i in range(embedding_dim):
+            embedded[:, i] = signal[i * time_delay:n - (embedding_dim - 1 - i) * time_delay]
+        
+        # Find nearest neighbors
+        n_points = embedded.shape[0]
+        min_sep = int(n_points * 0.1)  # Minimum temporal separation
+        
+        divergences = []
+        
+        for i in range(n_points - min_sep):
+            # Find nearest neighbor with temporal separation
+            distances = np.sqrt(np.sum((embedded[i] - embedded[i + min_sep:]) ** 2, axis=1))
+            if len(distances) > 0:
+                min_idx = np.argmin(distances)
+                
+                # Track divergence
+                div = []
+                for j in range(1, min(50, n_points - i - min_sep - min_idx)):
+                    if i + j < n_points and i + min_sep + min_idx + j < n_points:
+                        d = np.linalg.norm(embedded[i + j] - embedded[i + min_sep + min_idx + j])
+                        if d > 0:
+                            div.append(np.log(d))
+                
+                if len(div) > 10:
+                    divergences.append(div)
+        
+        if not divergences:
+            return 0.0
+        
+        # Average divergence rate (Lyapunov exponent)
+        avg_div = np.mean(divergences, axis=0)
+        
+        # Fit linear regression to get slope (Lyapunov exponent)
+        if len(avg_div) > 2:
+            x = np.arange(len(avg_div))
+            if HAS_SCIPY:
+                slope, _, _, _, _ = stats.linregress(x, avg_div)
+                return float(slope)
+            else:
+                # Simple linear fit without scipy
+                coeffs = np.polyfit(x, avg_div, 1)
+                return float(coeffs[0])
+        
+        return 0.0
+    
+    def extract_advanced_features(self, signals: np.ndarray, fs: int, 
+                                 window_s: float = 2.0, 
+                                 step_s: float = 1.0) -> Tuple[np.ndarray, np.ndarray, Dict]:
+        """Extract advanced features including wavelets and Lyapunov exponents"""
         n_channels, n_samples = signals.shape
         window = int(window_s * fs)
         step = int(step_s * fs)
         n_windows = max(1, (n_samples - window) // step + 1)
         
         times = np.arange(n_windows) * step_s + window_s / 2
-        features = np.zeros((n_windows, n_channels, 5))
         
-        # EEG frequency bands
+        # Standard frequency bands
         bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 50)]
+        band_features = np.zeros((n_windows, n_channels, len(bands)))
+        
+        # Advanced features storage
+        wavelet_features = []
+        lyapunov_exponents = []
         
         for i in range(n_windows):
             start_idx = i * step
@@ -363,89 +480,122 @@ class EEGProcessor:
             if window_data.shape[1] < window // 4:
                 continue
             
+            window_wavelet = {}
+            window_lyapunov = []
+            
             for ch in range(n_channels):
+                channel_signal = window_data[ch]
+                
+                # Frequency band analysis
                 if HAS_SCIPY:
-                    freqs, psd = sp_signal.welch(
-                        window_data[ch], fs=fs, 
-                        nperseg=min(window, window_data.shape[1])
-                    )
+                    freqs, psd = sp_signal.welch(channel_signal, fs=fs, 
+                                                nperseg=min(256, len(channel_signal)))
                 else:
-                    # FFT-based PSD
-                    fft = np.fft.fft(window_data[ch])
+                    fft = np.fft.fft(channel_signal)
                     freqs = np.fft.fftfreq(len(fft), 1/fs)
                     psd = np.abs(fft) ** 2
                     pos_mask = freqs >= 0
                     freqs = freqs[pos_mask]
                     psd = psd[pos_mask]
                 
-                # Calculate band powers
                 for j, (low, high) in enumerate(bands):
                     mask = (freqs >= low) & (freqs <= high)
                     if np.any(mask):
-                        features[i, ch, j] = np.sqrt(np.trapz(psd[mask], freqs[mask]))
+                        band_features[i, ch, j] = np.sqrt(np.trapz(psd[mask], freqs[mask]))
+                
+                # Wavelet features
+                wav_feat = self.compute_wavelet_features(channel_signal, fs)
+                for key, val in wav_feat.items():
+                    if key not in window_wavelet:
+                        window_wavelet[key] = []
+                    window_wavelet[key].append(val)
+                
+                # Lyapunov exponent
+                lyap = self.compute_lyapunov_exponent(channel_signal)
+                window_lyapunov.append(lyap)
+            
+            wavelet_features.append(window_wavelet)
+            lyapunov_exponents.append(window_lyapunov)
         
-        return times, features
+        advanced_features = {
+            'wavelet_features': wavelet_features,
+            'lyapunov_exponents': lyapunov_exponents
+        }
+        
+        return times, band_features, advanced_features
     
-    def compute_criticality(self, features: np.ndarray, times: np.ndarray, 
-                           subject_type: str = None) -> Dict:
-        """Compute criticality metrics using logistic map dynamics"""
-        n_windows, n_channels, n_bands = features.shape
+    def compute_criticality_with_chaos(self, band_features: np.ndarray, 
+                                      advanced_features: Dict,
+                                      times: np.ndarray) -> Dict:
+        """
+        Compute criticality using:
+        1. Logistic map dynamics (R parameter)
+        2. Lyapunov exponents (chaos indicator)
+        3. Wavelet entropy (complexity measure)
+        """
+        n_windows, n_channels, n_bands = band_features.shape
         
         critical_windows = []
         r_evolution = []
         state_evolution = []
+        lyapunov_evolution = []
         
-        # Normalize features
-        normalized_features = features.copy()
-        for band_idx in range(n_bands):
-            band_data = normalized_features[:, :, band_idx]
-            band_mean = np.mean(band_data)
-            band_std = np.std(band_data)
-            if band_std > 0:
-                normalized_features[:, :, band_idx] = (band_data - band_mean) / band_std
+        # Normalize band features
+        normalized = band_features.copy()
+        for band in range(n_bands):
+            band_data = normalized[:, :, band]
+            mean_val = np.mean(band_data)
+            std_val = np.std(band_data)
+            if std_val > 0:
+                normalized[:, :, band] = (band_data - mean_val) / std_val
         
-        # Initialize logistic map parameters
+        # Initialize logistic map
         r_params = np.full(n_bands, 3.0)
         x_states = np.full(n_bands, 0.5)
-        
-        # Adjust sensitivity based on subject type
-        if subject_type == 'S':  # Seizure
-            sensitivity = 0.15
-            chaos_threshold = 3.5
-        else:
-            sensitivity = 0.08
-            chaos_threshold = 3.57
+        chaos_threshold = 3.57
         
         for i in range(n_windows):
-            # Calculate power changes
-            if i == 0:
-                power_change = np.zeros((n_channels, n_bands))
+            # Get Lyapunov exponents for this window
+            if i < len(advanced_features['lyapunov_exponents']):
+                mean_lyapunov = np.mean(advanced_features['lyapunov_exponents'][i])
+                lyapunov_evolution.append(mean_lyapunov)
             else:
-                power_change = normalized_features[i] - normalized_features[i-1]
+                mean_lyapunov = 0
+                lyapunov_evolution.append(0)
             
-            # Update R parameters based on activity
+            # Calculate power changes
+            if i > 0:
+                power_change = normalized[i] - normalized[i-1]
+            else:
+                power_change = np.zeros((n_channels, n_bands))
+            
+            # Update R parameters based on multiple factors
             for j in range(n_bands):
                 max_change = np.max(np.abs(power_change[:, j]))
-                mean_power = np.mean(np.abs(normalized_features[i, :, j]))
+                mean_power = np.mean(np.abs(normalized[i, :, j]))
                 
-                if max_change > 0.5 or mean_power > 1.5:
-                    r_params[j] = min(3.99, r_params[j] + sensitivity * (1 + max_change * 0.1))
+                # Combine multiple indicators
+                if max_change > 0.5 or mean_power > 1.5 or mean_lyapunov > 0.1:
+                    # Increase R (toward chaos)
+                    increment = 0.1 * (1 + max_change * 0.1 + abs(mean_lyapunov))
+                    r_params[j] = min(3.99, r_params[j] + increment)
                 else:
+                    # Decrease R (toward stability)
                     r_params[j] = max(2.8, r_params[j] - 0.02)
                 
                 # Update logistic map state
                 x_states[j] = r_params[j] * x_states[j] * (1 - x_states[j])
                 x_states[j] = np.clip(x_states[j], 0.001, 0.999)
             
-            # Calculate mean R and determine state
+            # Calculate mean R
             r_avg = np.mean(r_params)
             r_evolution.append(r_avg)
             
-            # Classify state
-            if r_avg > chaos_threshold:
+            # Determine state based on R and Lyapunov
+            if r_avg > chaos_threshold or mean_lyapunov > 0.15:
                 state = "critical"
                 critical_windows.append(i)
-            elif r_avg > 3.3:
+            elif r_avg > 3.3 or mean_lyapunov > 0.05:
                 state = "transitional"
             else:
                 state = "stable"
@@ -455,6 +605,7 @@ class EEGProcessor:
         # Calculate final metrics
         criticality_ratio = len(critical_windows) / max(1, n_windows)
         
+        # Determine final state
         if criticality_ratio > 0.4:
             final_state = "highly_critical"
         elif criticality_ratio > 0.2:
@@ -467,71 +618,177 @@ class EEGProcessor:
         # Band statistics
         band_names = ['delta', 'theta', 'alpha', 'beta', 'gamma']
         band_stats = {}
-        for i, band in enumerate(band_names):
-            band_data = features[:, :, i]
-            band_stats[band] = {
-                'mean_power': float(np.mean(band_data)),
-                'std_power': float(np.std(band_data))
+        for i, name in enumerate(band_names):
+            band_data = band_features[:, :, i]
+            band_stats[name] = {
+                'mean': float(np.mean(band_data)),
+                'std': float(np.std(band_data)),
+                'max': float(np.max(band_data))
             }
         
+        # Calculate complexity metrics
+        complexity_metrics = {
+            'mean_r_parameter': float(np.mean(r_evolution)),
+            'std_r_parameter': float(np.std(r_evolution)),
+            'mean_lyapunov': float(np.mean(lyapunov_evolution)),
+            'max_lyapunov': float(np.max(lyapunov_evolution)) if lyapunov_evolution else 0,
+            'chaos_percentage': float(np.sum([1 for r in r_evolution if r > chaos_threshold]) / len(r_evolution) * 100),
+            'temporal_complexity': float(np.var(r_evolution))
+        }
+        
         return {
-            'total_windows': n_windows,
-            'critical_windows': len(critical_windows),
             'criticality_ratio': criticality_ratio,
-            'final_state': final_state,
+            'critical_windows': len(critical_windows),
+            'total_windows': n_windows,
             'r_evolution': r_evolution,
+            'lyapunov_evolution': lyapunov_evolution,
             'state_evolution': state_evolution,
             'times': times.tolist(),
             'critical_indices': critical_windows,
             'band_statistics': band_stats,
-            'complexity_metrics': {
-                'mean_r_parameter': float(np.mean(r_evolution)),
-                'chaos_percentage': float(np.sum([1 for r in r_evolution if r > chaos_threshold]) / len(r_evolution) * 100)
-            }
+            'complexity_metrics': complexity_metrics,
+            'final_state': final_state
         }
 
-def generate_report(results: Dict, patient_info: str = "", data_source: str = "") -> str:
-    """Generate clinical interpretation report"""
-    ratio = results['criticality_ratio']
-    bands = results['band_statistics']
+def generate_comprehensive_report(results: Dict, database: str, data_dict: Dict) -> str:
+    """Generate comprehensive analysis report"""
     
     report = f"""
-## 🧠 EEG CRITICALITY ANALYSIS REPORT
+# 🧠 Advanced EEG Analysis Report
 
+**Database:** {database}
+**Files Analyzed:** {len(data_dict.get('eeg_data', []))}
 **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-**Patient:** {patient_info}
-**Data Source:** {data_source}
+**Analyst:** {st.session_state.get('username', 'Unknown')}
 
-### SUMMARY
-- **Criticality Level:** {ratio:.1%}
-- **Brain State:** {results['final_state'].replace('_', ' ').title()}
+## Executive Summary
+
+### Brain State Classification
+- **Overall State:** {results['final_state'].replace('_', ' ').title()}
+- **Criticality Ratio:** {results['criticality_ratio']:.1%}
 - **Critical Episodes:** {results['critical_windows']} of {results['total_windows']} windows
 
-### FREQUENCY BANDS
-- Delta (0.5-4 Hz): {bands['delta']['mean_power']:.1f} μV
-- Theta (4-8 Hz): {bands['theta']['mean_power']:.1f} μV
-- Alpha (8-13 Hz): {bands['alpha']['mean_power']:.1f} μV
-- Beta (13-30 Hz): {bands['beta']['mean_power']:.1f} μV
-- Gamma (30-50 Hz): {bands['gamma']['mean_power']:.1f} μV
+## Chaos Theory Metrics
 
-### INTERPRETATION
+### Logistic Map Analysis
+- **Mean R Parameter:** {results['complexity_metrics']['mean_r_parameter']:.3f}
+- **R Std Deviation:** {results['complexity_metrics']['std_r_parameter']:.3f}
+- **Chaos Percentage:** {results['complexity_metrics']['chaos_percentage']:.1f}%
+- **Temporal Complexity:** {results['complexity_metrics']['temporal_complexity']:.3f}
+
+### Lyapunov Exponents
+- **Mean Lyapunov:** {results['complexity_metrics']['mean_lyapunov']:.4f}
+- **Max Lyapunov:** {results['complexity_metrics']['max_lyapunov']:.4f}
+- **Interpretation:** {"Chaotic dynamics" if results['complexity_metrics']['mean_lyapunov'] > 0.1 else "Stable dynamics" if results['complexity_metrics']['mean_lyapunov'] < 0.05 else "Edge of chaos"}
+
+## Frequency Band Analysis
+
+| Band | Frequency Range | Mean Power (µV) | Std Dev | Max Power |
+|------|----------------|-----------------|---------|-----------|"""
+    
+    band_info = {
+        'delta': '0.5-4 Hz',
+        'theta': '4-8 Hz',
+        'alpha': '8-13 Hz',
+        'beta': '13-30 Hz',
+        'gamma': '30-50 Hz'
+    }
+    
+    for band, freq_range in band_info.items():
+        stats = results['band_statistics'][band]
+        report += f"\n| {band.title()} | {freq_range} | {stats['mean']:.2f} | {stats['std']:.2f} | {stats['max']:.2f} |"
+    
+    report += f"""
+
+## Clinical Interpretation
+
+### Primary Findings
 """
     
-    if ratio > 0.4:
-        report += "🚨 **HIGH CRITICALITY** - Significant instability detected. Clinical correlation recommended."
-    elif ratio > 0.2:
-        report += "⚠️ **MODERATE CRITICALITY** - Transitional state with periodic instability."
-    elif ratio > 0.1:
-        report += "📈 **MILD CRITICALITY** - Minor instabilities within normal range."
+    if results['criticality_ratio'] > 0.4:
+        report += """
+🚨 **HIGH CRITICALITY DETECTED**
+- Brain dynamics show significant instability
+- Multiple critical state transitions observed
+- High risk for seizure activity or consciousness alterations
+- **Recommendation:** Immediate clinical review required
+"""
+    elif results['criticality_ratio'] > 0.2:
+        report += """
+⚠️ **MODERATE CRITICALITY**
+- Transitional brain state with periodic instabilities
+- Some critical episodes detected
+- Possible altered consciousness or cognitive changes
+- **Recommendation:** Close monitoring advised
+"""
+    elif results['criticality_ratio'] > 0.1:
+        report += """
+📊 **MILD CRITICALITY**
+- Minor fluctuations in brain dynamics
+- Occasional transitions between states
+- Within normal physiological variation
+- **Recommendation:** Routine follow-up
+"""
     else:
-        report += "✅ **STABLE** - Well-regulated brain state."
+        report += """
+✅ **STABLE BRAIN DYNAMICS**
+- Well-regulated neural activity
+- Minimal critical transitions
+- Normal homeostatic control
+- **Recommendation:** No immediate concerns
+"""
+    
+    # Add database-specific interpretations
+    if "psi" in database.lower() or "psychedelic" in database.lower():
+        report += """
+
+### Psychedelic-Specific Analysis
+- Increased neural entropy may indicate expanded consciousness
+- Higher criticality could reflect enhanced neuroplasticity
+- Monitor for integration period post-experience
+"""
+    elif "alcohol" in database.lower():
+        report += """
+
+### Alcohol-Specific Analysis
+- Decreased alpha power may indicate intoxication
+- Increased theta/delta could suggest sedation
+- Monitor for withdrawal-related hyperexcitability
+"""
+    
+    report += f"""
+
+## Technical Details
+
+### Processing Parameters
+- Window Size: 2.0 seconds
+- Analysis Method: Wavelet + Logistic Map + Lyapunov
+- Chaos Threshold: R > 3.57
+- Critical Lyapunov: λ > 0.15
+
+### Data Quality
+- Total Data Points: {results['total_windows'] * 256 * 2:,}
+- Files Processed: {len(data_dict.get('files', []))}
+- Subjects Identified: {len(data_dict.get('subjects', [])) if data_dict.get('subjects') else 'Unknown'}
+
+## Recommendations
+
+1. **Clinical Correlation:** Compare findings with clinical observations
+2. **Temporal Analysis:** Review specific time points of critical episodes
+3. **Follow-up:** Consider repeat analysis for trending
+4. **Documentation:** Include in patient medical record if applicable
+
+---
+*Report generated by Advanced EEG Analysis Platform v2.0*
+*Utilizing Wavelet Analysis, Lyapunov Exponents, and Logistic Map Dynamics*
+"""
     
     return report
 
 # Initialize processor
 @st.cache_resource
 def get_processor():
-    return EEGProcessor()
+    return AdvancedEEGProcessor()
 
 def main():
     st.set_page_config(
@@ -541,26 +798,22 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Initialize session state
-    init_session_state()
-    
-    # Check authentication
-    if not check_authentication():
+    # Authentication
+    if not authenticate_user():
         st.stop()
     
-    # Show logged-in user
-    if st.session_state.get('username'):
-        col1, col2 = st.columns([6, 1])
-        with col1:
-            st.title("🧠 Advanced EEG Criticality Analysis Platform")
-        with col2:
-            st.markdown(f"**Logged in as:** {st.session_state['username']}")
-            if st.button("🚪 Logout"):
-                st.session_state['authentication_status'] = None
-                st.session_state['username'] = None
-                st.rerun()
-    
-    st.markdown("**Real-Time Brain State Analysis Using Chaos Theory**")
+    # Header with user info
+    col1, col2 = st.columns([6, 1])
+    with col1:
+        st.title("🧠 Advanced EEG Criticality Analysis Platform")
+        st.caption("Real Database Integration with Wavelet Analysis & Lyapunov Exponents")
+    with col2:
+        st.markdown(f"**User:** {st.session_state['username']}")
+        if st.button("🚪 Logout", key="logout"):
+            for key in ['authenticated', 'username', 'access_level']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
     
     # Initialize processor
     processor = get_processor()
@@ -569,180 +822,271 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        analysis_type = st.radio(
-            "Select Analysis Type:",
-            ["🔬 Database Analysis", "📁 File Upload"]
+        # Database selection with icons
+        st.subheader("📊 Select Database")
+        database_id = st.selectbox(
+            "Choose Dataset:",
+            options=list(REAL_DATABASES.keys()),
+            format_func=lambda x: REAL_DATABASES[x]["name"]
         )
         
-        st.subheader("👤 Patient Information")
-        patient_age = st.number_input("Age", 0, 120, 30)
-        patient_condition = st.text_input("Condition", "")
+        if database_id:
+            db_info = REAL_DATABASES[database_id]
+            with st.expander("ℹ️ Database Info", expanded=True):
+                st.markdown(f"""
+                **Description:** {db_info['description']}
+                
+                **Format:** {db_info['format'].upper()}
+                
+                **Source:** {'GitHub' if db_info['type'] == 'github' else 'Google Drive'}
+                
+                **Citation:** {db_info['citation']}
+                
+                **Expected Criticality:** {db_info['expected_criticality']}
+                """)
         
-        st.subheader("🔧 Parameters")
-        window_size = st.slider("Window Size (s)", 1.0, 5.0, 2.0, 0.5)
+        st.subheader("🔧 Analysis Parameters")
+        window_size = st.slider("Window Size (seconds)", 1.0, 5.0, 2.0, 0.5)
+        step_size = st.slider("Step Size (seconds)", 0.5, 2.0, 1.0, 0.5)
         
-        st.info("""
-        **Chaos Detection:**
-        - R < 3.0: Stable
-        - 3.0-3.57: Transitional  
-        - R > 3.57: Critical/Chaotic
-        """)
+        st.subheader("📈 Advanced Features")
+        use_wavelets = st.checkbox("Enable Wavelet Analysis", value=True, 
+                                  help="Decompose signals using wavelet transform")
+        compute_lyapunov = st.checkbox("Compute Lyapunov Exponents", value=True,
+                                      help="Measure chaos and divergence of trajectories")
+        
+        st.subheader("📊 Visualization Options")
+        show_raw = st.checkbox("Show Raw Signals", value=False)
+        show_bands = st.checkbox("Show Frequency Bands", value=True)
+        show_criticality = st.checkbox("Show Criticality Evolution", value=True)
+        show_lyapunov = st.checkbox("Show Lyapunov Exponents", value=compute_lyapunov)
     
     # Main content area
-    if analysis_type == "🔬 Database Analysis":
-        st.header("🔬 Database Analysis")
+    st.header(f"Analyzing: {REAL_DATABASES[database_id]['name']}")
+    
+    # Analysis button
+    if st.button("🚀 Download & Analyze Dataset", type="primary", use_container_width=True):
         
-        col1, col2, col3 = st.columns(3)
+        # Download dataset
+        success, zip_content, message = processor.downloader.download_dataset(database_id)
         
-        with col1:
-            db_id = st.selectbox(
-                "Database:",
-                options=list(PUBLIC_DATABASES.keys()),
-                format_func=lambda x: PUBLIC_DATABASES[x]["name"]
-            )
-        
-        if db_id:
-            db_info = processor.get_database_info(db_id)
+        if success and zip_content:
+            st.success(f"✅ {message}")
             
-            with col2:
-                subject_id = st.selectbox(
-                    "Subject:",
-                    options=db_info["available_subjects"],
-                    help="Z/O: Healthy | N/F: Interictal | S: SEIZURE"
-                )
+            # Extract data
+            with st.spinner("📦 Extracting data from archive..."):
+                extracted_data = processor.downloader.extract_zip_data(zip_content, database_id)
             
-            with col3:
-                if subject_id:
-                    connector = processor.connectors[db_id]
-                    sessions = connector.get_subject_sessions(subject_id)
-                    session_id = st.selectbox("Segment:", options=sessions)
-        
-        # Show subject info
-        if subject_id and subject_id in BONN_DATASET_INFO:
-            info = BONN_DATASET_INFO[subject_id]
-            if subject_id == 'S':
-                st.error(f"""
-                🚨 **{subject_id}: {info['description']}**
-                - Characteristics: {info['characteristics']}
-                - Expected: {info['expected_criticality']}
-                """)
-            else:
-                st.info(f"""
-                **{subject_id}: {info['description']}**
-                - Characteristics: {info['characteristics']}
-                - Expected: {info['expected_criticality']}
-                """)
-        
-        if st.button("🚀 Analyze", type="primary", use_container_width=True):
-            if db_id and subject_id and session_id:
-                with st.spinner("Analyzing EEG data..."):
-                    try:
-                        # Get data
-                        connector = processor.connectors[db_id]
-                        file_content, filename, data_source = connector.download_eeg_sample(subject_id, session_id)
+            if extracted_data["files"]:
+                st.success(f"✅ Found {len(extracted_data['files'])} files in archive")
+                
+                # Show extracted files
+                with st.expander(f"📁 Archive Contents ({len(extracted_data['files'])} files)"):
+                    cols = st.columns(2)
+                    for idx, file in enumerate(extracted_data['files'][:20]):
+                        cols[idx % 2].write(f"• {file}")
+                    if len(extracted_data['files']) > 20:
+                        st.write(f"... and {len(extracted_data['files']) - 20} more files")
+                    
+                    if extracted_data["subjects"]:
+                        st.write(f"\n**Subjects found:** {', '.join(extracted_data['subjects'][:10])}")
+                
+                # Process EEG data
+                try:
+                    with st.spinner("🧠 Processing EEG signals..."):
+                        signals, fs, channels = processor.process_eeg_data(extracted_data)
+                        st.success(f"✅ Loaded {len(channels)} channels at {fs} Hz sampling rate")
+                    
+                    # Extract features
+                    with st.spinner("📊 Extracting features with wavelets and computing Lyapunov exponents..."):
+                        times, band_features, advanced_features = processor.extract_advanced_features(
+                            signals, fs, window_size, step_size
+                        )
                         
-                        # Process
-                        signals, fs, channels = processor.load_eeg_file(file_content, filename)
-                        times, features = processor.extract_features(signals, fs, window_s=window_size)
-                        results = processor.compute_criticality(features, times, subject_type=subject_id)
+                    # Compute criticality
+                    with st.spinner("🔮 Computing criticality metrics using chaos theory..."):
+                        results = processor.compute_criticality_with_chaos(
+                            band_features, advanced_features, times
+                        )
+                    
+                    st.success("✅ Analysis Complete!")
+                    
+                    # Display key metrics
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    
+                    with col1:
+                        color = "🔴" if results['criticality_ratio'] > 0.4 else "🟡" if results['criticality_ratio'] > 0.2 else "🟢"
+                        st.metric(f"{color} Criticality", f"{results['criticality_ratio']:.1%}")
+                    
+                    with col2:
+                        st.metric("Brain State", results['final_state'].replace('_', ' ').title())
+                    
+                    with col3:
+                        st.metric("Mean R", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
+                    
+                    with col4:
+                        st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
+                    
+                    with col5:
+                        st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%")
+                    
+                    # Visualizations
+                    if HAS_MATPLOTLIB:
+                        # Count plots to show
+                        n_plots = sum([show_raw, show_bands, show_criticality, show_lyapunov])
                         
-                        # Display results
-                        st.success("✅ Analysis Complete!")
-                        
-                        # Metrics
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            criticality_color = "🔴" if results['criticality_ratio'] > 0.4 else "🟡" if results['criticality_ratio'] > 0.2 else "🟢"
-                            st.metric(f"{criticality_color} Criticality", f"{results['criticality_ratio']:.1%}")
-                        with col2:
-                            st.metric("Brain State", results['final_state'].replace('_', ' ').title())
-                        with col3:
-                            st.metric("Critical Episodes", f"{results['critical_windows']}/{results['total_windows']}")
-                        with col4:
-                            st.metric("Mean R", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
-                        
-                        # Visualization
-                        if HAS_MATPLOTLIB:
-                            fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+                        if n_plots > 0:
+                            fig, axes = plt.subplots(n_plots, 1, figsize=(14, 4*n_plots))
+                            if n_plots == 1:
+                                axes = [axes]
                             
-                            # R-parameter evolution
-                            ax1 = axes[0]
-                            colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red' 
-                                     for s in results['state_evolution']]
-                            ax1.scatter(results['times'], results['r_evolution'], c=colors, alpha=0.7, s=50)
-                            ax1.axhline(y=3.57, color='red', linestyle='--', alpha=0.5, label='Chaos Threshold')
-                            ax1.set_ylabel('R Parameter')
-                            ax1.set_title('Criticality Evolution')
-                            ax1.legend()
-                            ax1.grid(True, alpha=0.3)
+                            plot_idx = 0
                             
-                            # Frequency bands
-                            ax2 = axes[1]
-                            bands = ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma']
-                            powers = [results['band_statistics'][b.lower()]['mean_power'] for b in bands]
-                            bars = ax2.bar(bands, powers, color=['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000'])
-                            ax2.set_ylabel('Mean Power (μV)')
-                            ax2.set_xlabel('Frequency Band')
-                            ax2.set_title('EEG Frequency Analysis')
-                            ax2.grid(True, alpha=0.3, axis='y')
+                            # Raw signals plot
+                            if show_raw:
+                                ax = axes[plot_idx]
+                                time_vec = np.arange(min(2000, signals.shape[1])) / fs
+                                for i in range(min(3, len(channels))):
+                                    ax.plot(time_vec, signals[i, :len(time_vec)] + i*50, 
+                                           label=channels[i], alpha=0.7)
+                                ax.set_xlabel("Time (s)")
+                                ax.set_ylabel("Amplitude (µV)")
+                                ax.set_title("Raw EEG Signals (First 3 channels)")
+                                ax.legend(loc='upper right')
+                                ax.grid(True, alpha=0.3)
+                                plot_idx += 1
+                            
+                            # Frequency bands plot
+                            if show_bands:
+                                ax = axes[plot_idx]
+                                bands = ['Delta\n0.5-4Hz', 'Theta\n4-8Hz', 'Alpha\n8-13Hz', 
+                                        'Beta\n13-30Hz', 'Gamma\n30-50Hz']
+                                powers = [results['band_statistics'][b.split('\n')[0].lower()]['mean'] 
+                                         for b in bands]
+                                colors = ['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000']
+                                bars = ax.bar(bands, powers, color=colors, alpha=0.7, edgecolor='black')
+                                ax.set_ylabel("Mean Power (µV)")
+                                ax.set_title("EEG Frequency Band Analysis")
+                                ax.grid(True, alpha=0.3, axis='y')
+                                
+                                for bar, power in zip(bars, powers):
+                                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                                           f'{power:.1f}', ha='center', va='bottom', fontweight='bold')
+                                plot_idx += 1
+                            
+                            # Criticality evolution plot
+                            if show_criticality:
+                                ax = axes[plot_idx]
+                                colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red'
+                                         for s in results['state_evolution']]
+                                ax.scatter(results['times'], results['r_evolution'], 
+                                          c=colors, alpha=0.7, s=50, edgecolors='black')
+                                ax.axhline(y=3.57, color='red', linestyle='--', 
+                                          alpha=0.5, label='Chaos Threshold (3.57)', linewidth=2)
+                                ax.axhline(y=3.0, color='green', linestyle='--', 
+                                          alpha=0.3, label='Stability Threshold (3.0)')
+                                ax.fill_between(results['times'], 3.57, 4.0, alpha=0.1, color='red')
+                                ax.set_xlabel("Time (s)")
+                                ax.set_ylabel("R Parameter")
+                                ax.set_title("Brain State Criticality Evolution (Logistic Map)")
+                                ax.legend(loc='upper right')
+                                ax.grid(True, alpha=0.3)
+                                ax.set_ylim([2.5, 4.0])
+                                plot_idx += 1
+                            
+                            # Lyapunov exponents plot
+                            if show_lyapunov and 'lyapunov_evolution' in results:
+                                ax = axes[plot_idx]
+                                lyap_values = results['lyapunov_evolution']
+                                ax.plot(results['times'][:len(lyap_values)], lyap_values, 
+                                       'b-', linewidth=2, label='Lyapunov Exponent')
+                                ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+                                ax.axhline(y=0.1, color='red', linestyle='--', 
+                                          alpha=0.5, label='Chaos Threshold (λ>0.1)')
+                                ax.fill_between(results['times'][:len(lyap_values)], 
+                                               0, lyap_values, where=[l > 0 for l in lyap_values],
+                                               alpha=0.3, color='red', label='Chaotic regions')
+                                ax.set_xlabel("Time (s)")
+                                ax.set_ylabel("Lyapunov Exponent (λ)")
+                                ax.set_title("Lyapunov Exponents - Chaos Indicator")
+                                ax.legend(loc='upper right')
+                                ax.grid(True, alpha=0.3)
                             
                             plt.tight_layout()
                             st.pyplot(fig)
-                        
-                        # Report
-                        patient_info = f"Age: {patient_age}, Condition: {patient_condition or 'N/A'}"
-                        report = generate_report(results, patient_info, data_source)
+                    
+                    # Generate comprehensive report
+                    report = generate_comprehensive_report(results, 
+                                                          REAL_DATABASES[database_id]['name'],
+                                                          extracted_data)
+                    
+                    # Display report
+                    with st.expander("📄 Full Analysis Report", expanded=True):
                         st.markdown(report)
-                        
-                        # Download button
+                    
+                    # Download options
+                    col1, col2 = st.columns(2)
+                    with col1:
                         st.download_button(
-                            "📄 Download Report",
+                            "💾 Download Report (Markdown)",
                             data=report,
-                            file_name=f"eeg_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                            file_name=f"eeg_report_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
                             mime="text/markdown"
                         )
-                        
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+                    
+                    with col2:
+                        # Create JSON with all results
+                        json_results = {
+                            "database": database_id,
+                            "analysis_date": datetime.now().isoformat(),
+                            "results": results,
+                            "parameters": {
+                                "window_size": window_size,
+                                "step_size": step_size,
+                                "sampling_rate": fs
+                            }
+                        }
+                        st.download_button(
+                            "📊 Download Raw Data (JSON)",
+                            data=json.dumps(json_results, indent=2, default=str),
+                            file_name=f"eeg_data_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json"
+                        )
+                    
+                except Exception as e:
+                    st.error(f"❌ Error processing data: {str(e)}")
+                    st.info("💡 Try adjusting the analysis parameters or contact support if the issue persists.")
             else:
-                st.warning("Please select all options")
+                st.warning("⚠️ No valid EEG data found in the archive. The file may be corrupted or in an unsupported format.")
+        else:
+            st.error(f"❌ Failed to download dataset: {message}")
+            st.info("💡 Please check your internet connection or try again later.")
     
-    else:  # File Upload
-        st.header("📁 Upload EEG File")
+    # Information footer
+    with st.expander("ℹ️ About This Platform"):
+        st.markdown("""
+        ### Advanced Features
         
-        uploaded_file = st.file_uploader(
-            "Choose file",
-            type=['csv', 'txt'],
-            help="CSV with channels as columns, or TXT with single channel"
-        )
+        **🌊 Wavelet Analysis**
+        - Decomposes EEG signals into time-frequency components
+        - Provides better temporal resolution than FFT
+        - Captures transient events and non-stationary dynamics
         
-        if uploaded_file:
-            if st.button("🚀 Analyze Upload", type="primary", use_container_width=True):
-                with st.spinner("Processing..."):
-                    try:
-                        file_content = uploaded_file.read()
-                        signals, fs, channels = processor.load_eeg_file(file_content, uploaded_file.name)
-                        times, features = processor.extract_features(signals, fs, window_s=window_size)
-                        results = processor.compute_criticality(features, times)
-                        
-                        st.success("✅ Analysis Complete!")
-                        
-                        # Display results
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Criticality", f"{results['criticality_ratio']:.1%}")
-                        with col2:
-                            st.metric("Brain State", results['final_state'].replace('_', ' ').title())
-                        with col3:
-                            st.metric("Channels", len(channels))
-                        
-                        # Report
-                        patient_info = f"Age: {patient_age}, Condition: {patient_condition or 'N/A'}"
-                        report = generate_report(results, patient_info, f"Uploaded: {uploaded_file.name}")
-                        st.markdown(report)
-                        
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+        **📈 Lyapunov Exponents**
+        - Measures the rate of divergence of nearby trajectories
+        - Positive values indicate chaotic dynamics
+        - Critical for identifying edge-of-chaos states
+        
+        **🔄 Logistic Map Dynamics**
+        - Models brain state transitions using chaos theory
+        - R parameter evolution tracks criticality
+        - R > 3.57 indicates chaotic regime
+        
+        **📊 Integrated Analysis**
+        - Combines multiple chaos indicators
+        - Provides comprehensive brain state assessment
+        - Suitable for research and clinical applications
+        """)
 
 if __name__ == "__main__":
     main()

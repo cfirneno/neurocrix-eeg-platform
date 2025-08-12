@@ -40,6 +40,13 @@ def init_session_state():
         st.session_state['access_level'] = None
     if 'login_attempts' not in st.session_state:
         st.session_state['login_attempts'] = 0
+    # Data storage
+    if 'downloaded_data' not in st.session_state:
+        st.session_state['downloaded_data'] = None
+    if 'parsed_data' not in st.session_state:
+        st.session_state['parsed_data'] = None
+    if 'analysis_results' not in st.session_state:
+        st.session_state['analysis_results'] = None
 
 def authenticate_user():
     """Handle user authentication with username and password"""
@@ -98,45 +105,38 @@ def authenticate_user():
     
     return False
 
-# ======================== REAL DATABASE CONFIGURATION ========================
+# ======================== DATABASE CONFIGURATION ========================
 REAL_DATABASES = {
     "psi_database": {
         "name": "🍄 PSI Psychedelic EEG Database",
-        "description": "Real EEG recordings from psychedelic/psychiatric studies - GitHub hosted",
+        "description": "Real EEG recordings from psychedelic/psychiatric studies",
         "url": "https://github.com/cfirneno/neurocrix-eeg-platform/raw/main/psydis-Kag.zip",
         "type": "github",
-        "format": "zip",
-        "citation": "Psychedelic Studies Initiative Dataset",
-        "expected_criticality": "Variable - depends on substance and dose"
+        "format": "zip"
     },
     "alcohol_database": {
         "name": "🍺 Alcohol Effects EEG Database", 
-        "description": "EEG recordings studying alcohol effects on brain activity - Google Drive hosted",
-        "url": "1loM7-BHPwboU64Tsb10baO0vpbI4LMX0",  # Google Drive file ID
+        "description": "EEG recordings studying alcohol effects on brain activity",
+        "url": "1loM7-BHPwboU64Tsb10baO0vpbI4LMX0",
         "type": "gdrive",
-        "format": "zip",
-        "citation": "Alcohol Neuroscience Study",
-        "expected_criticality": "Moderate - increased with intoxication levels"
+        "format": "zip"
     },
     "demo_database": {
         "name": "🎮 Demo EEG Database",
         "description": "Generated demonstration EEG patterns for testing",
         "url": "demo",
         "type": "demo",
-        "format": "generated",
-        "citation": "Simulated data for demonstration",
-        "expected_criticality": "Configurable - for testing purposes"
+        "format": "generated"
     }
 }
 
-# Optional imports with fallback
+# Optional imports
 try:
     import scipy.signal as sp_signal
     from scipy import stats
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
-    st.warning("SciPy not installed. Some features limited.")
 
 try:
     import matplotlib.pyplot as plt
@@ -145,74 +145,75 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 try:
-    import pywt  # For wavelet analysis
+    import pywt
     HAS_PYWT = True
 except ImportError:
     HAS_PYWT = False
-    st.info("PyWavelets not installed. Using FFT-based analysis instead.")
 
+# ======================== STEP 1: DATA DOWNLOAD ========================
 class DataDownloader:
-    """Handle downloading from GitHub and Google Drive"""
+    """Handle downloading from various sources"""
     
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 EEG-Platform/2.0'
         })
     
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def download_from_github(_self, url: str) -> Tuple[bool, Optional[bytes], str]:
+    def download_from_github(self, url: str) -> Tuple[bool, Optional[bytes], str]:
         """Download from GitHub"""
         try:
-            # Convert blob to raw if needed
             if "/blob/" in url:
                 url = url.replace("/blob/", "/raw/")
             
-            response = _self.session.get(url, timeout=60)
-            
+            response = self.session.get(url, timeout=60)
             if response.status_code == 200:
                 return True, response.content, "Successfully downloaded from GitHub"
             else:
                 return False, None, f"GitHub download failed: HTTP {response.status_code}"
-                
         except Exception as e:
             return False, None, f"GitHub error: {str(e)}"
     
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def download_from_gdrive(_self, file_id: str) -> Tuple[bool, Optional[bytes], str]:
-        """Download from Google Drive using direct download link"""
+    def download_from_gdrive(self, file_id: str) -> Tuple[bool, Optional[bytes], str]:
+        """Download from Google Drive"""
         try:
-            # Direct download URL for Google Drive
             download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-            
-            response = _self.session.get(download_url, timeout=60, stream=True)
-            
-            # Check if file is too large and needs confirmation
-            if b"download-warning" in response.content[:1000]:
-                # Extract confirmation token
-                for chunk in response.iter_content(chunk_size=32768):
-                    if b"confirm=" in chunk:
-                        match = re.search(r'confirm=([0-9A-Za-z_]+)', chunk.decode('utf-8', errors='ignore'))
-                        if match:
-                            confirm_token = match.group(1)
-                            download_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
-                            response = _self.session.get(download_url, timeout=60)
-                            break
+            response = self.session.get(download_url, timeout=60)
             
             if response.status_code == 200:
                 return True, response.content, "Successfully downloaded from Google Drive"
             else:
-                # Try alternative method
-                alt_url = f"https://drive.google.com/u/0/uc?id={file_id}&export=download"
-                response = _self.session.get(alt_url, timeout=60)
-                
-                if response.status_code == 200:
-                    return True, response.content, "Successfully downloaded from Google Drive (alt method)"
-                else:
-                    return False, None, f"Google Drive download failed: HTTP {response.status_code}"
-                    
+                return False, None, f"Google Drive download failed"
         except Exception as e:
             return False, None, f"Google Drive error: {str(e)}"
+    
+    def generate_demo_data(self) -> Tuple[bool, Optional[bytes], str]:
+        """Generate demo data as zip"""
+        try:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w') as zf:
+                # Generate multiple demo files
+                for i in range(3):
+                    fs = 256
+                    duration = 30
+                    n_channels = 8
+                    n_samples = fs * duration
+                    time = np.linspace(0, duration, n_samples)
+                    
+                    data = {'Time': time}
+                    for ch in range(n_channels):
+                        signal = 30 * np.sin(2 * np.pi * (10 + ch) * time + np.random.random() * 2 * np.pi)
+                        signal += 20 * np.sin(2 * np.pi * 20 * time)
+                        signal += np.random.normal(0, 5, n_samples)
+                        data[f'CH_{ch+1}'] = signal
+                    
+                    df = pd.DataFrame(data)
+                    csv_content = df.to_csv(index=False)
+                    zf.writestr(f'demo_subject_{i+1}.csv', csv_content)
+            
+            return True, zip_buffer.getvalue(), "Demo data generated"
+        except Exception as e:
+            return False, None, f"Demo generation failed: {str(e)}"
     
     def download_dataset(self, database_id: str) -> Tuple[bool, Optional[bytes], str]:
         """Download dataset based on type"""
@@ -221,708 +222,242 @@ class DataDownloader:
         
         db_config = REAL_DATABASES[database_id]
         
-        # Handle demo database
         if db_config["type"] == "demo":
-            st.info("🎮 Using demo database - generating sample data...")
-            # Create a fake zip with demo CSV data
-            import io
-            import zipfile
-            
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w') as zf:
-                # Generate demo EEG data
-                fs = 256
-                duration = 30
-                n_channels = 8
-                n_samples = fs * duration
-                time = np.linspace(0, duration, n_samples)
-                
-                # Create demo CSV data
-                data = {
-                    'Time': time
-                }
-                for ch in range(n_channels):
-                    signal = 30 * np.sin(2 * np.pi * 10 * time + np.random.random() * 2 * np.pi)
-                    signal += 20 * np.sin(2 * np.pi * 20 * time + np.random.random() * 2 * np.pi)
-                    signal += np.random.normal(0, 5, n_samples)
-                    data[f'CH_{ch+1}'] = signal
-                
-                df = pd.DataFrame(data)
-                csv_content = df.to_csv(index=False)
-                zf.writestr('demo_eeg_data.csv', csv_content)
-            
-            return True, zip_buffer.getvalue(), "Demo data generated successfully"
-        
-        with st.spinner(f"📥 Downloading {db_config['name']}..."):
-            if db_config["type"] == "github":
-                return self.download_from_github(db_config["url"])
-            elif db_config["type"] == "gdrive":
-                return self.download_from_gdrive(db_config["url"])
-            else:
-                return False, None, "Unknown database type"
+            return self.generate_demo_data()
+        elif db_config["type"] == "github":
+            return self.download_from_github(db_config["url"])
+        elif db_config["type"] == "gdrive":
+            return self.download_from_gdrive(db_config["url"])
+        else:
+            return False, None, "Unknown database type"
+
+# ======================== STEP 2: DATA PARSING ========================
+class DataParser:
+    """Parse and validate downloaded data"""
     
-    def extract_zip_data(self, zip_content: bytes, db_name: str) -> Dict:
-        """Extract and organize data from zip file"""
-        extracted_data = {
+    def extract_zip_contents(self, zip_content: bytes) -> Dict:
+        """Extract contents from zip file"""
+        extracted = {
             "files": [],
-            "eeg_data": [],
-            "metadata": {},
-            "subjects": [],
-            "database": db_name
+            "csv_files": [],
+            "txt_files": [],
+            "json_files": [],
+            "other_files": []
         }
         
         try:
             with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zf:
-                extracted_data["files"] = zf.namelist()
-                
-                st.info(f"📦 Found {len(extracted_data['files'])} files in archive")
-                
                 for filename in zf.namelist():
-                    # Skip directories and system files
-                    if filename.endswith('/') or filename.startswith('__') or filename.startswith('.'):
+                    if filename.endswith('/') or filename.startswith('__'):
                         continue
+                    
+                    extracted["files"].append(filename)
                     
                     if filename.endswith('.csv'):
-                        try:
-                            with zf.open(filename) as f:
-                                # Try different encodings
-                                content = f.read()
-                                for encoding in ['utf-8', 'latin-1', 'iso-8859-1']:
-                                    try:
-                                        df = pd.read_csv(io.BytesIO(content), encoding=encoding)
-                                        break
-                                    except:
-                                        continue
-                                
-                                # Store the dataframe
-                                extracted_data["eeg_data"].append({
-                                    "filename": filename,
-                                    "data": df,
-                                    "shape": df.shape,
-                                    "columns": list(df.columns)
-                                })
-                                
-                                st.success(f"✅ Loaded CSV: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
-                                
-                                # Extract subject IDs
-                                subject_match = re.search(r'[SP]\d{3}|subject_\d+|sub\d+|participant_\d+|patient_\d+', filename, re.I)
-                                if subject_match:
-                                    extracted_data["subjects"].append(subject_match.group())
-                        except Exception as e:
-                            st.warning(f"Could not read CSV {filename}: {str(e)}")
-                    
-                    elif filename.endswith('.json'):
-                        try:
-                            with zf.open(filename) as f:
-                                extracted_data["metadata"][filename] = json.loads(f.read())
-                        except:
-                            pass
-                    
+                        extracted["csv_files"].append(filename)
                     elif filename.endswith('.txt'):
-                        try:
-                            with zf.open(filename) as f:
-                                content = f.read().decode('utf-8', errors='ignore').strip()
-                                lines = content.split('\n')
-                                
-                                # Try to parse as numeric data
-                                numeric_lines = []
-                                for line in lines:
-                                    line = line.strip()
-                                    if line and not any(c.isalpha() for c in line):  # No letters
-                                        try:
-                                            val = float(line.replace(',', '.'))  # Handle comma decimals
-                                            numeric_lines.append(val)
-                                        except:
-                                            pass
-                                
-                                if len(numeric_lines) > 100:  # Likely EEG data
-                                    data = np.array(numeric_lines)
-                                    extracted_data["eeg_data"].append({
-                                        "filename": filename,
-                                        "data": data,
-                                        "shape": data.shape,
-                                        "type": "single_channel"
-                                    })
-                                    st.success(f"✅ Loaded TXT: {filename} ({len(data)} samples)")
-                        except Exception as e:
-                            st.warning(f"Could not read TXT {filename}: {str(e)}")
-                    
-                    elif filename.endswith(('.edf', '.bdf')):
-                        st.info(f"ℹ️ Found EDF/BDF file: {filename} (requires special library)")
-                
-                extracted_data["subjects"] = list(set(extracted_data["subjects"]))
-                
-        except Exception as e:
-            st.error(f"Error extracting zip: {str(e)}")
-            
-        return extracted_data
-
-class AdvancedEEGProcessor:
-    """Advanced EEG processing with wavelets and Lyapunov exponents"""
-    
-    def __init__(self):
-        self.downloader = DataDownloader()
-    
-    def process_eeg_data(self, data_dict: Dict) -> Tuple[np.ndarray, int, List[str]]:
-        """Process extracted EEG data into standard format"""
-        
-        if not data_dict.get("eeg_data"):
-            # Generate demo data if no real data found
-            st.warning("No EEG data found. Generating demo signals...")
-            return self.generate_demo_data()
-        
-        # Try to find valid EEG data in the extracted files
-        valid_data = None
-        
-        for eeg_item in data_dict["eeg_data"]:
-            try:
-                if isinstance(eeg_item["data"], pd.DataFrame):
-                    df = eeg_item["data"]
-                    
-                    # Show data preview for debugging
-                    st.info(f"Processing file: {eeg_item['filename']}")
-                    
-                    # Clean the dataframe - remove non-numeric columns
-                    numeric_columns = []
-                    for col in df.columns:
-                        try:
-                            # Try to convert column to numeric
-                            pd.to_numeric(df[col], errors='raise')
-                            numeric_columns.append(col)
-                        except:
-                            # Skip non-numeric columns (like gender, labels, etc.)
-                            st.warning(f"Skipping non-numeric column: {col}")
-                    
-                    if len(numeric_columns) == 0:
-                        st.warning(f"No numeric columns found in {eeg_item['filename']}")
-                        continue
-                    
-                    # Keep only numeric columns
-                    df_numeric = df[numeric_columns]
-                    
-                    # Check if first column is time/index
-                    first_col = df_numeric.columns[0] if len(df_numeric.columns) > 0 else ""
-                    if any(col in str(first_col).lower() for col in ['time', 'index', 'timestamp', 'sample']):
-                        data = df_numeric.iloc[:, 1:].values.T
-                        channels = list(df_numeric.columns[1:])
+                        extracted["txt_files"].append(filename)
+                    elif filename.endswith('.json'):
+                        extracted["json_files"].append(filename)
                     else:
-                        data = df_numeric.values.T
-                        channels = list(df_numeric.columns)
-                    
-                    # Convert to float and check for validity
-                    data = data.astype(float)
-                    
-                    # Remove any NaN values
-                    if np.any(np.isnan(data)):
-                        st.warning("Found NaN values, replacing with zeros")
-                        data = np.nan_to_num(data, nan=0.0)
-                    
-                    # Ensure we have valid data
-                    if data.shape[0] > 0 and data.shape[1] > 100:  # At least 100 samples
-                        valid_data = data
-                        valid_channels = channels
-                        st.success(f"✅ Successfully loaded {data.shape[0]} channels with {data.shape[1]} samples")
-                        break
-                    
-                elif isinstance(eeg_item["data"], np.ndarray):
-                    # Single channel data
-                    single_channel = eeg_item["data"]
-                    if len(single_channel) > 100:  # At least 100 samples
-                        n_samples = len(single_channel)
-                        n_channels = 8
-                        
-                        # Create multi-channel from single channel
-                        data = np.zeros((n_channels, n_samples))
-                        for ch in range(n_channels):
-                            data[ch] = single_channel + np.random.normal(0, 1, n_samples) * 0.1
-                        
-                        valid_data = data
-                        valid_channels = [f"CH_{i+1}" for i in range(n_channels)]
-                        st.success(f"✅ Processed single-channel data into {n_channels} channels")
-                        break
-                        
-            except Exception as e:
-                st.warning(f"Could not process {eeg_item.get('filename', 'unknown')}: {str(e)}")
-                continue
-        
-        # If no valid data found, generate demo data
-        if valid_data is None:
-            st.warning("Could not process uploaded data. Generating demo signals for demonstration...")
-            return self.generate_demo_data()
-        
-        # Estimate sampling rate
-        fs = 256  # Default
-        if "metadata" in data_dict and data_dict["metadata"]:
-            for meta in data_dict["metadata"].values():
-                if "sampling_rate" in meta:
-                    fs = meta["sampling_rate"]
-                    break
-                elif "fs" in meta:
-                    fs = meta["fs"]
-                    break
-        
-        return valid_data, int(fs), valid_channels
+                        extracted["other_files"].append(filename)
+            
+            return extracted
+        except Exception as e:
+            st.error(f"Failed to extract zip: {str(e)}")
+            return extracted
     
-    def generate_demo_data(self) -> Tuple[np.ndarray, int, List[str]]:
-        """Generate demo EEG data"""
-        fs = 256
-        duration = 30
-        n_channels = 8
-        n_samples = fs * duration
-        time = np.linspace(0, duration, n_samples)
-        
-        st.info("🎮 Generating demo EEG signals for analysis...")
-        
-        data = np.zeros((n_channels, n_samples))
-        for ch in range(n_channels):
-            # Mix of frequencies to simulate real EEG
-            data[ch] += 30 * np.sin(2 * np.pi * 10 * time + np.random.random() * 2 * np.pi)  # Alpha
-            data[ch] += 20 * np.sin(2 * np.pi * 20 * time + np.random.random() * 2 * np.pi)  # Beta
-            data[ch] += 10 * np.sin(2 * np.pi * 5 * time + np.random.random() * 2 * np.pi)   # Theta
-            data[ch] += 15 * np.sin(2 * np.pi * 2 * time + np.random.random() * 2 * np.pi)   # Delta
-            data[ch] += np.random.normal(0, 5, n_samples)  # Noise
-        
-        channels = [f"CH_{i+1}" for i in range(n_channels)]
-        return data, fs, channels
+    def parse_csv_file(self, zip_content: bytes, filename: str) -> Optional[pd.DataFrame]:
+        """Parse a specific CSV file from zip"""
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zf:
+                with zf.open(filename) as f:
+                    # Try different encodings
+                    content = f.read()
+                    for encoding in ['utf-8', 'latin-1', 'iso-8859-1']:
+                        try:
+                            df = pd.read_csv(io.BytesIO(content), encoding=encoding)
+                            return df
+                        except:
+                            continue
+            return None
+        except Exception as e:
+            st.error(f"Failed to parse CSV {filename}: {str(e)}")
+            return None
     
-    def compute_wavelet_features(self, signal: np.ndarray, fs: int) -> Dict:
-        """Compute wavelet-based features"""
-        features = {}
+    def validate_eeg_data(self, df: pd.DataFrame) -> Tuple[bool, List[str], str]:
+        """Validate if DataFrame contains valid EEG data"""
+        # Find numeric columns
+        numeric_cols = []
+        for col in df.columns:
+            try:
+                # Check if column can be converted to numeric
+                test_series = pd.to_numeric(df[col], errors='coerce')
+                # If more than 80% of values are numeric, consider it valid
+                if test_series.notna().sum() / len(test_series) > 0.8:
+                    numeric_cols.append(col)
+            except:
+                pass
         
-        if HAS_PYWT:
-            # Use PyWavelets for wavelet decomposition
-            wavelet = 'db4'  # Daubechies 4 wavelet
-            max_level = min(pywt.dwt_max_level(len(signal), wavelet), 5)
-            
-            # Decompose signal
-            coeffs = pywt.wavedec(signal, wavelet, level=max_level)
-            
-            # Calculate energy for each level
-            energies = []
-            for i, coeff in enumerate(coeffs):
-                energy = np.sum(coeff ** 2)
-                energies.append(energy)
-                features[f'wavelet_energy_level_{i}'] = energy
-            
-            # Relative wavelet energy
-            total_energy = sum(energies)
-            if total_energy > 0:
-                for i, energy in enumerate(energies):
-                    features[f'relative_wavelet_energy_{i}'] = energy / total_energy
-            
-            # Wavelet entropy
-            probs = np.array(energies) / (total_energy + 1e-10)
-            wavelet_entropy = -np.sum(probs * np.log2(probs + 1e-10))
-            features['wavelet_entropy'] = wavelet_entropy
-        else:
-            # Fallback: Use FFT-based band energy
-            fft = np.fft.fft(signal)
-            freqs = np.fft.fftfreq(len(signal), 1/fs)
-            psd = np.abs(fft) ** 2
-            
-            bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 50)]
-            for i, (low, high) in enumerate(bands):
-                mask = (np.abs(freqs) >= low) & (np.abs(freqs) <= high)
-                features[f'fft_band_energy_{i}'] = np.sum(psd[mask])
+        # Check if we have enough numeric columns (at least 1 channel)
+        if len(numeric_cols) == 0:
+            return False, [], "No numeric columns found"
         
-        return features
+        # Filter out time/index columns if present
+        eeg_cols = []
+        for col in numeric_cols:
+            if not any(keyword in str(col).lower() for keyword in ['time', 'index', 'timestamp', 'sample']):
+                eeg_cols.append(col)
+        
+        # If all columns were time/index, use all numeric columns
+        if len(eeg_cols) == 0:
+            eeg_cols = numeric_cols
+        
+        # Check if we have enough samples
+        if len(df) < 100:
+            return False, eeg_cols, "Not enough samples (minimum 100 required)"
+        
+        return True, eeg_cols, "Valid EEG data"
     
-    def compute_lyapunov_exponent(self, signal: np.ndarray, 
-                                  embedding_dim: int = 3, 
-                                  time_delay: int = 1) -> float:
-        """
-        Compute largest Lyapunov exponent using Rosenstein's method
-        This indicates the rate of divergence of nearby trajectories
-        """
-        n = len(signal)
+    def prepare_eeg_array(self, df: pd.DataFrame, eeg_columns: List[str]) -> np.ndarray:
+        """Convert DataFrame to EEG array format"""
+        # Extract only EEG columns
+        eeg_df = df[eeg_columns].copy()
         
-        # Create embedded matrix
-        if n < embedding_dim * time_delay:
-            return 0.0
+        # Convert to numeric and handle NaN
+        for col in eeg_columns:
+            eeg_df[col] = pd.to_numeric(eeg_df[col], errors='coerce')
         
-        embedded = np.zeros((n - (embedding_dim - 1) * time_delay, embedding_dim))
-        for i in range(embedding_dim):
-            embedded[:, i] = signal[i * time_delay:n - (embedding_dim - 1 - i) * time_delay]
+        # Fill NaN with 0
+        eeg_df = eeg_df.fillna(0)
         
-        # Find nearest neighbors
-        n_points = embedded.shape[0]
-        min_sep = int(n_points * 0.1)  # Minimum temporal separation
+        # Convert to numpy array
+        data = eeg_df.values
         
-        divergences = []
+        # Ensure channels x samples format
+        if data.shape[0] > data.shape[1]:
+            # More rows than columns - transpose
+            data = data.T
         
-        for i in range(n_points - min_sep):
-            # Find nearest neighbor with temporal separation
-            distances = np.sqrt(np.sum((embedded[i] - embedded[i + min_sep:]) ** 2, axis=1))
-            if len(distances) > 0:
-                min_idx = np.argmin(distances)
-                
-                # Track divergence
-                div = []
-                for j in range(1, min(50, n_points - i - min_sep - min_idx)):
-                    if i + j < n_points and i + min_sep + min_idx + j < n_points:
-                        d = np.linalg.norm(embedded[i + j] - embedded[i + min_sep + min_idx + j])
-                        if d > 0:
-                            div.append(np.log(d))
-                
-                if len(div) > 10:
-                    divergences.append(div)
-        
-        if not divergences:
-            return 0.0
-        
-        # Average divergence rate (Lyapunov exponent)
-        avg_div = np.mean(divergences, axis=0)
-        
-        # Fit linear regression to get slope (Lyapunov exponent)
-        if len(avg_div) > 2:
-            x = np.arange(len(avg_div))
-            if HAS_SCIPY:
-                slope, _, _, _, _ = stats.linregress(x, avg_div)
-                return float(slope)
-            else:
-                # Simple linear fit without scipy
-                coeffs = np.polyfit(x, avg_div, 1)
-                return float(coeffs[0])
-        
-        return 0.0
+        return data.astype(float)
+
+# ======================== STEP 3: EEG ANALYSIS ========================
+class EEGAnalyzer:
+    """Perform EEG analysis with chaos theory metrics"""
     
-    def extract_advanced_features(self, signals: np.ndarray, fs: int, 
-                                 window_s: float = 2.0, 
-                                 step_s: float = 1.0) -> Tuple[np.ndarray, np.ndarray, Dict]:
-        """Extract advanced features including wavelets and Lyapunov exponents"""
+    def compute_band_powers(self, signals: np.ndarray, fs: int, window_s: float = 2.0) -> Dict:
+        """Compute frequency band powers"""
         n_channels, n_samples = signals.shape
-        window = int(window_s * fs)
-        step = int(step_s * fs)
-        n_windows = max(1, (n_samples - window) // step + 1)
         
-        times = np.arange(n_windows) * step_s + window_s / 2
+        # Define frequency bands
+        bands = {
+            'delta': (0.5, 4),
+            'theta': (4, 8),
+            'alpha': (8, 13),
+            'beta': (13, 30),
+            'gamma': (30, 50)
+        }
         
-        # Standard frequency bands
-        bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 50)]
-        band_features = np.zeros((n_windows, n_channels, len(bands)))
-        
-        # Advanced features storage
-        wavelet_features = []
-        lyapunov_exponents = []
-        
-        for i in range(n_windows):
-            start_idx = i * step
-            end_idx = min(start_idx + window, n_samples)
-            window_data = signals[:, start_idx:end_idx]
-            
-            if window_data.shape[1] < window // 4:
-                continue
-            
-            window_wavelet = {}
-            window_lyapunov = []
-            
+        band_powers = {}
+        for band_name, (low, high) in bands.items():
+            powers = []
             for ch in range(n_channels):
-                channel_signal = window_data[ch]
-                
-                # Frequency band analysis
                 if HAS_SCIPY:
-                    freqs, psd = sp_signal.welch(channel_signal, fs=fs, 
-                                                nperseg=min(256, len(channel_signal)))
+                    freqs, psd = sp_signal.welch(signals[ch], fs=fs, nperseg=min(256, n_samples))
+                    mask = (freqs >= low) & (freqs <= high)
+                    power = np.trapz(psd[mask], freqs[mask])
                 else:
-                    fft = np.fft.fft(channel_signal)
+                    # FFT fallback
+                    fft = np.fft.fft(signals[ch])
                     freqs = np.fft.fftfreq(len(fft), 1/fs)
                     psd = np.abs(fft) ** 2
-                    pos_mask = freqs >= 0
-                    freqs = freqs[pos_mask]
-                    psd = psd[pos_mask]
-                
-                for j, (low, high) in enumerate(bands):
-                    mask = (freqs >= low) & (freqs <= high)
-                    if np.any(mask):
-                        band_features[i, ch, j] = np.sqrt(np.trapz(psd[mask], freqs[mask]))
-                
-                # Wavelet features
-                wav_feat = self.compute_wavelet_features(channel_signal, fs)
-                for key, val in wav_feat.items():
-                    if key not in window_wavelet:
-                        window_wavelet[key] = []
-                    window_wavelet[key].append(val)
-                
-                # Lyapunov exponent
-                lyap = self.compute_lyapunov_exponent(channel_signal)
-                window_lyapunov.append(lyap)
-            
-            wavelet_features.append(window_wavelet)
-            lyapunov_exponents.append(window_lyapunov)
+                    mask = (freqs >= low) & (freqs <= high) & (freqs >= 0)
+                    power = np.sum(psd[mask])
+                powers.append(power)
+            band_powers[band_name] = np.mean(powers)
         
-        advanced_features = {
-            'wavelet_features': wavelet_features,
-            'lyapunov_exponents': lyapunov_exponents
-        }
-        
-        return times, band_features, advanced_features
+        return band_powers
     
-    def compute_criticality_with_chaos(self, band_features: np.ndarray, 
-                                      advanced_features: Dict,
-                                      times: np.ndarray) -> Dict:
-        """
-        Compute criticality using:
-        1. Logistic map dynamics (R parameter)
-        2. Lyapunov exponents (chaos indicator)
-        3. Wavelet entropy (complexity measure)
-        """
-        n_windows, n_channels, n_bands = band_features.shape
+    def compute_lyapunov_exponent(self, signal: np.ndarray) -> float:
+        """Simplified Lyapunov exponent calculation"""
+        n = len(signal)
+        if n < 100:
+            return 0.0
         
-        critical_windows = []
-        r_evolution = []
-        state_evolution = []
-        lyapunov_evolution = []
+        # Simple divergence measure
+        divergences = []
+        for i in range(n - 10):
+            if i + 20 < n:
+                d1 = abs(signal[i] - signal[i+1])
+                d2 = abs(signal[i+10] - signal[i+11])
+                if d1 > 0:
+                    divergences.append(d2 / d1)
         
-        # Normalize band features
-        normalized = band_features.copy()
-        for band in range(n_bands):
-            band_data = normalized[:, :, band]
-            mean_val = np.mean(band_data)
-            std_val = np.std(band_data)
-            if std_val > 0:
-                normalized[:, :, band] = (band_data - mean_val) / std_val
+        if divergences:
+            return np.mean(np.log(np.array(divergences) + 1e-10))
+        return 0.0
+    
+    def compute_logistic_map_r(self, signal: np.ndarray) -> float:
+        """Estimate R parameter from signal dynamics"""
+        # Normalize signal
+        sig_norm = (signal - np.mean(signal)) / (np.std(signal) + 1e-10)
         
-        # Initialize logistic map
-        r_params = np.full(n_bands, 3.0)
-        x_states = np.full(n_bands, 0.5)
+        # Calculate variability measure
+        variability = np.std(np.diff(sig_norm))
+        
+        # Map to R parameter range (2.5 to 4.0)
+        r_param = 2.5 + variability * 1.5
+        r_param = np.clip(r_param, 2.5, 4.0)
+        
+        return r_param
+    
+    def analyze_eeg(self, signals: np.ndarray, fs: int) -> Dict:
+        """Perform complete EEG analysis"""
+        n_channels, n_samples = signals.shape
+        
+        # Compute band powers
+        band_powers = self.compute_band_powers(signals, fs)
+        
+        # Compute chaos metrics for each channel
+        lyapunov_exps = []
+        r_params = []
+        
+        for ch in range(n_channels):
+            lyap = self.compute_lyapunov_exponent(signals[ch])
+            r_param = self.compute_logistic_map_r(signals[ch])
+            lyapunov_exps.append(lyap)
+            r_params.append(r_param)
+        
+        # Average metrics
+        mean_lyapunov = np.mean(lyapunov_exps)
+        mean_r = np.mean(r_params)
+        
+        # Determine criticality
         chaos_threshold = 3.57
-        
-        for i in range(n_windows):
-            # Get Lyapunov exponents for this window
-            if i < len(advanced_features['lyapunov_exponents']):
-                mean_lyapunov = np.mean(advanced_features['lyapunov_exponents'][i])
-                lyapunov_evolution.append(mean_lyapunov)
-            else:
-                mean_lyapunov = 0
-                lyapunov_evolution.append(0)
-            
-            # Calculate power changes
-            if i > 0:
-                power_change = normalized[i] - normalized[i-1]
-            else:
-                power_change = np.zeros((n_channels, n_bands))
-            
-            # Update R parameters based on multiple factors
-            for j in range(n_bands):
-                max_change = np.max(np.abs(power_change[:, j]))
-                mean_power = np.mean(np.abs(normalized[i, :, j]))
-                
-                # Combine multiple indicators
-                if max_change > 0.5 or mean_power > 1.5 or mean_lyapunov > 0.1:
-                    # Increase R (toward chaos)
-                    increment = 0.1 * (1 + max_change * 0.1 + abs(mean_lyapunov))
-                    r_params[j] = min(3.99, r_params[j] + increment)
-                else:
-                    # Decrease R (toward stability)
-                    r_params[j] = max(2.8, r_params[j] - 0.02)
-                
-                # Update logistic map state
-                x_states[j] = r_params[j] * x_states[j] * (1 - x_states[j])
-                x_states[j] = np.clip(x_states[j], 0.001, 0.999)
-            
-            # Calculate mean R
-            r_avg = np.mean(r_params)
-            r_evolution.append(r_avg)
-            
-            # Determine state based on R and Lyapunov
-            if r_avg > chaos_threshold or mean_lyapunov > 0.15:
-                state = "critical"
-                critical_windows.append(i)
-            elif r_avg > 3.3 or mean_lyapunov > 0.05:
-                state = "transitional"
-            else:
-                state = "stable"
-            
-            state_evolution.append(state)
-        
-        # Calculate final metrics
-        criticality_ratio = len(critical_windows) / max(1, n_windows)
-        
-        # Determine final state
-        if criticality_ratio > 0.4:
-            final_state = "highly_critical"
-        elif criticality_ratio > 0.2:
-            final_state = "moderately_critical"
-        elif criticality_ratio > 0.1:
-            final_state = "transitional"
+        if mean_r > chaos_threshold or mean_lyapunov > 0.1:
+            criticality = "HIGH"
+            criticality_score = 0.8
+        elif mean_r > 3.3 or mean_lyapunov > 0.05:
+            criticality = "MODERATE"
+            criticality_score = 0.5
         else:
-            final_state = "stable"
-        
-        # Band statistics
-        band_names = ['delta', 'theta', 'alpha', 'beta', 'gamma']
-        band_stats = {}
-        for i, name in enumerate(band_names):
-            band_data = band_features[:, :, i]
-            band_stats[name] = {
-                'mean': float(np.mean(band_data)),
-                'std': float(np.std(band_data)),
-                'max': float(np.max(band_data))
-            }
-        
-        # Calculate complexity metrics
-        complexity_metrics = {
-            'mean_r_parameter': float(np.mean(r_evolution)),
-            'std_r_parameter': float(np.std(r_evolution)),
-            'mean_lyapunov': float(np.mean(lyapunov_evolution)),
-            'max_lyapunov': float(np.max(lyapunov_evolution)) if lyapunov_evolution else 0,
-            'chaos_percentage': float(np.sum([1 for r in r_evolution if r > chaos_threshold]) / len(r_evolution) * 100),
-            'temporal_complexity': float(np.var(r_evolution))
-        }
+            criticality = "LOW"
+            criticality_score = 0.2
         
         return {
-            'criticality_ratio': criticality_ratio,
-            'critical_windows': len(critical_windows),
-            'total_windows': n_windows,
-            'r_evolution': r_evolution,
-            'lyapunov_evolution': lyapunov_evolution,
-            'state_evolution': state_evolution,
-            'times': times.tolist(),
-            'critical_indices': critical_windows,
-            'band_statistics': band_stats,
-            'complexity_metrics': complexity_metrics,
-            'final_state': final_state
+            'n_channels': n_channels,
+            'n_samples': n_samples,
+            'sampling_rate': fs,
+            'duration_seconds': n_samples / fs,
+            'band_powers': band_powers,
+            'mean_lyapunov': mean_lyapunov,
+            'mean_r_parameter': mean_r,
+            'criticality': criticality,
+            'criticality_score': criticality_score,
+            'chaos_percentage': (mean_r - 2.5) / 1.5 * 100
         }
 
-def generate_comprehensive_report(results: Dict, database: str, data_dict: Dict) -> str:
-    """Generate comprehensive analysis report"""
-    
-    report = f"""
-# 🧠 Advanced EEG Analysis Report
-
-**Database:** {database}
-**Files Analyzed:** {len(data_dict.get('eeg_data', []))}
-**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-**Analyst:** {st.session_state.get('username', 'Unknown')}
-
-## Executive Summary
-
-### Brain State Classification
-- **Overall State:** {results['final_state'].replace('_', ' ').title()}
-- **Criticality Ratio:** {results['criticality_ratio']:.1%}
-- **Critical Episodes:** {results['critical_windows']} of {results['total_windows']} windows
-
-## Chaos Theory Metrics
-
-### Logistic Map Analysis
-- **Mean R Parameter:** {results['complexity_metrics']['mean_r_parameter']:.3f}
-- **R Std Deviation:** {results['complexity_metrics']['std_r_parameter']:.3f}
-- **Chaos Percentage:** {results['complexity_metrics']['chaos_percentage']:.1f}%
-- **Temporal Complexity:** {results['complexity_metrics']['temporal_complexity']:.3f}
-
-### Lyapunov Exponents
-- **Mean Lyapunov:** {results['complexity_metrics']['mean_lyapunov']:.4f}
-- **Max Lyapunov:** {results['complexity_metrics']['max_lyapunov']:.4f}
-- **Interpretation:** {"Chaotic dynamics" if results['complexity_metrics']['mean_lyapunov'] > 0.1 else "Stable dynamics" if results['complexity_metrics']['mean_lyapunov'] < 0.05 else "Edge of chaos"}
-
-## Frequency Band Analysis
-
-| Band | Frequency Range | Mean Power (µV) | Std Dev | Max Power |
-|------|----------------|-----------------|---------|-----------|"""
-    
-    band_info = {
-        'delta': '0.5-4 Hz',
-        'theta': '4-8 Hz',
-        'alpha': '8-13 Hz',
-        'beta': '13-30 Hz',
-        'gamma': '30-50 Hz'
-    }
-    
-    for band, freq_range in band_info.items():
-        stats = results['band_statistics'][band]
-        report += f"\n| {band.title()} | {freq_range} | {stats['mean']:.2f} | {stats['std']:.2f} | {stats['max']:.2f} |"
-    
-    report += f"""
-
-## Clinical Interpretation
-
-### Primary Findings
-"""
-    
-    if results['criticality_ratio'] > 0.4:
-        report += """
-🚨 **HIGH CRITICALITY DETECTED**
-- Brain dynamics show significant instability
-- Multiple critical state transitions observed
-- High risk for seizure activity or consciousness alterations
-- **Recommendation:** Immediate clinical review required
-"""
-    elif results['criticality_ratio'] > 0.2:
-        report += """
-⚠️ **MODERATE CRITICALITY**
-- Transitional brain state with periodic instabilities
-- Some critical episodes detected
-- Possible altered consciousness or cognitive changes
-- **Recommendation:** Close monitoring advised
-"""
-    elif results['criticality_ratio'] > 0.1:
-        report += """
-📊 **MILD CRITICALITY**
-- Minor fluctuations in brain dynamics
-- Occasional transitions between states
-- Within normal physiological variation
-- **Recommendation:** Routine follow-up
-"""
-    else:
-        report += """
-✅ **STABLE BRAIN DYNAMICS**
-- Well-regulated neural activity
-- Minimal critical transitions
-- Normal homeostatic control
-- **Recommendation:** No immediate concerns
-"""
-    
-    # Add database-specific interpretations
-    if "psi" in database.lower() or "psychedelic" in database.lower():
-        report += """
-
-### Psychedelic-Specific Analysis
-- Increased neural entropy may indicate expanded consciousness
-- Higher criticality could reflect enhanced neuroplasticity
-- Monitor for integration period post-experience
-"""
-    elif "alcohol" in database.lower():
-        report += """
-
-### Alcohol-Specific Analysis
-- Decreased alpha power may indicate intoxication
-- Increased theta/delta could suggest sedation
-- Monitor for withdrawal-related hyperexcitability
-"""
-    
-    report += f"""
-
-## Technical Details
-
-### Processing Parameters
-- Window Size: 2.0 seconds
-- Analysis Method: Wavelet + Logistic Map + Lyapunov
-- Chaos Threshold: R > 3.57
-- Critical Lyapunov: λ > 0.15
-
-### Data Quality
-- Total Data Points: {results['total_windows'] * 256 * 2:,}
-- Files Processed: {len(data_dict.get('files', []))}
-- Subjects Identified: {len(data_dict.get('subjects', [])) if data_dict.get('subjects') else 'Unknown'}
-
-## Recommendations
-
-1. **Clinical Correlation:** Compare findings with clinical observations
-2. **Temporal Analysis:** Review specific time points of critical episodes
-3. **Follow-up:** Consider repeat analysis for trending
-4. **Documentation:** Include in patient medical record if applicable
-
----
-*Report generated by Advanced EEG Analysis Platform v2.0*
-*Utilizing Wavelet Analysis, Lyapunov Exponents, and Logistic Map Dynamics*
-"""
-    
-    return report
-
-# Initialize processor
-@st.cache_resource
-def get_processor():
-    return AdvancedEEGProcessor()
-
+# ======================== MAIN APPLICATION ========================
 def main():
     st.set_page_config(
         page_title="🧠 EEG Analysis Platform",
@@ -931,400 +466,280 @@ def main():
         initial_sidebar_state="expanded"
     )
     
+    # Initialize session state
+    init_session_state()
+    
     # Authentication
     if not authenticate_user():
         st.stop()
     
-    # Header with user info
+    # Header
     col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🧠 Advanced EEG Criticality Analysis Platform")
-        st.caption("Real Database Integration with Wavelet Analysis & Lyapunov Exponents")
+        st.caption("Modular Architecture: Download → Parse → Analyze")
     with col2:
         st.markdown(f"**User:** {st.session_state['username']}")
-        if st.button("🚪 Logout", key="logout"):
+        if st.button("🚪 Logout"):
             for key in ['authenticated', 'username', 'access_level']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
     
-    # Initialize processor
-    processor = get_processor()
+    # Initialize components
+    downloader = DataDownloader()
+    parser = DataParser()
+    analyzer = EEGAnalyzer()
     
-    # Sidebar configuration
+    # Sidebar
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        # Database selection with icons
+        # Database selection
         st.subheader("📊 Select Database")
         
-        # Debug: Show available databases
-        available_dbs = list(REAL_DATABASES.keys())
-        st.caption(f"Available: {len(available_dbs)} databases")
+        # List databases explicitly
+        database_options = ["psi_database", "alcohol_database", "demo_database"]
+        database_names = {
+            "psi_database": "🍄 PSI Psychedelic EEG",
+            "alcohol_database": "🍺 Alcohol Effects EEG",
+            "demo_database": "🎮 Demo EEG"
+        }
         
         database_id = st.selectbox(
             "Choose Dataset:",
-            options=available_dbs,
-            format_func=lambda x: REAL_DATABASES[x]["name"],
-            key="database_selector"
+            options=database_options,
+            format_func=lambda x: database_names.get(x, x)
         )
         
-        if database_id:
+        if database_id and database_id in REAL_DATABASES:
             db_info = REAL_DATABASES[database_id]
-            with st.expander("ℹ️ Database Info", expanded=True):
-                st.markdown(f"""
-                **Description:** {db_info['description']}
-                
-                **Format:** {db_info['format'].upper()}
-                
-                **Source:** {'GitHub' if db_info['type'] == 'github' else 'Google Drive' if db_info['type'] == 'gdrive' else 'Demo'}
-                
-                **Citation:** {db_info['citation']}
-                
-                **Expected Criticality:** {db_info['expected_criticality']}
-                """)
-        
-        st.subheader("🔧 Analysis Parameters")
-        window_size = st.slider("Window Size (seconds)", 1.0, 5.0, 2.0, 0.5)
-        step_size = st.slider("Step Size (seconds)", 0.5, 2.0, 1.0, 0.5)
-        
-        st.subheader("📈 Advanced Features")
-        use_wavelets = st.checkbox("Enable Wavelet Analysis", value=True, 
-                                  help="Decompose signals using wavelet transform")
-        compute_lyapunov = st.checkbox("Compute Lyapunov Exponents", value=True,
-                                      help="Measure chaos and divergence of trajectories")
-        
-        st.subheader("📊 Visualization Options")
-        show_raw = st.checkbox("Show Raw Signals", value=False)
-        show_bands = st.checkbox("Show Frequency Bands", value=True)
-        show_criticality = st.checkbox("Show Criticality Evolution", value=True)
-        show_lyapunov = st.checkbox("Show Lyapunov Exponents", value=compute_lyapunov)
-    
-    # Main content area
-    st.header(f"Analyzing: {REAL_DATABASES[database_id]['name']}")
-    
-    # Add troubleshooting info
-    if database_id == "psi_database":
-        st.info("💡 PSI Database: Contains psychedelic EEG recordings. Data may include metadata columns that will be automatically filtered.")
-    elif database_id == "alcohol_database":
-        st.info("💡 Alcohol Database: Contains EEG recordings under alcohol influence. Large file may take time to download.")
-    
-    # Analysis button
-    if st.button("🚀 Download & Analyze Dataset", type="primary", use_container_width=True):
-        
-        try:
-            # Download dataset
-            success, zip_content, message = processor.downloader.download_dataset(database_id)
+            st.info(f"""
+            **Type:** {db_info['type'].upper()}
             
-            if success and zip_content:
-                st.success(f"✅ {message}")
-                
-                # Check file size
-                file_size_mb = len(zip_content) / (1024 * 1024)
-                st.info(f"📦 Downloaded file size: {file_size_mb:.2f} MB")
-                
-                # Extract data
-                with st.spinner("📦 Extracting data from archive..."):
-                    extracted_data = processor.downloader.extract_zip_data(zip_content, database_id)
-                
-                if extracted_data["files"]:
-                    st.success(f"✅ Found {len(extracted_data['files'])} files in archive")
-                    
-                    # Show extracted files
-                    with st.expander(f"📁 Archive Contents ({len(extracted_data['files'])} files)", expanded=True):
-                        # Show file list
-                        st.write("**Files found:**")
-                        cols = st.columns(2)
-                        for idx, file in enumerate(extracted_data['files'][:20]):
-                            cols[idx % 2].write(f"• {file}")
-                        if len(extracted_data['files']) > 20:
-                            st.write(f"... and {len(extracted_data['files']) - 20} more files")
-                        
-                        # Show data preview if available
-                        if extracted_data["eeg_data"]:
-                            st.write("\n**📊 Data Preview:**")
-                            for i, eeg_item in enumerate(extracted_data["eeg_data"][:3]):  # Show first 3 files
-                                if isinstance(eeg_item["data"], pd.DataFrame):
-                                    df = eeg_item["data"]
-                                    st.write(f"\n**File:** {eeg_item['filename']}")
-                                    st.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-                                    st.write("Columns:", list(df.columns)[:10])
-                                    if len(df.columns) > 10:
-                                        st.write(f"... and {len(df.columns) - 10} more columns")
-                                    
-                                    # Show first few rows
-                                    st.write("First 5 rows:")
-                                    st.dataframe(df.head(), use_container_width=True)
-                                elif isinstance(eeg_item["data"], np.ndarray):
-                                    st.write(f"\n**File:** {eeg_item['filename']}")
-                                    st.write(f"Array shape: {eeg_item['data'].shape}")
-                                    st.write(f"Data type: Single channel numeric")
-                        
-                        if extracted_data["subjects"]:
-                            st.write(f"\n**Subjects found:** {', '.join(extracted_data['subjects'][:10])}")
-                    
-                    # Process EEG data
-                    try:
-                        with st.spinner("🧠 Processing EEG signals..."):
-                            signals, fs, channels = processor.process_eeg_data(extracted_data)
-                            st.success(f"✅ Loaded {len(channels)} channels at {fs} Hz sampling rate")
-                        
-                        # Extract features
-                        with st.spinner("📊 Extracting features with wavelets and computing Lyapunov exponents..."):
-                            times, band_features, advanced_features = processor.extract_advanced_features(
-                                signals, fs, window_size, step_size
-                            )
-                            
-                        # Compute criticality
-                        with st.spinner("🔮 Computing criticality metrics using chaos theory..."):
-                            results = processor.compute_criticality_with_chaos(
-                                band_features, advanced_features, times
-                            )
-                        
-                        st.success("✅ Analysis Complete!")
-                        
-                        # Display key metrics
-                        col1, col2, col3, col4, col5 = st.columns(5)
-                        
-                        with col1:
-                            color = "🔴" if results['criticality_ratio'] > 0.4 else "🟡" if results['criticality_ratio'] > 0.2 else "🟢"
-                            st.metric(f"{color} Criticality", f"{results['criticality_ratio']:.1%}")
-                        
-                        with col2:
-                            st.metric("Brain State", results['final_state'].replace('_', ' ').title())
-                        
-                        with col3:
-                            st.metric("Mean R", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
-                        
-                        with col4:
-                            st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
-                        
-                        with col5:
-                            st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%")
-                        
-                        # Visualizations
-                        if HAS_MATPLOTLIB:
-                            # Count plots to show
-                            n_plots = sum([show_raw, show_bands, show_criticality, show_lyapunov])
-                            
-                            if n_plots > 0:
-                                fig, axes = plt.subplots(n_plots, 1, figsize=(14, 4*n_plots))
-                                if n_plots == 1:
-                                    axes = [axes]
-                                
-                                plot_idx = 0
-                                
-                                # Raw signals plot
-                                if show_raw:
-                                    ax = axes[plot_idx]
-                                    time_vec = np.arange(min(2000, signals.shape[1])) / fs
-                                    for i in range(min(3, len(channels))):
-                                        ax.plot(time_vec, signals[i, :len(time_vec)] + i*50, 
-                                               label=channels[i], alpha=0.7)
-                                    ax.set_xlabel("Time (s)")
-                                    ax.set_ylabel("Amplitude (µV)")
-                                    ax.set_title("Raw EEG Signals (First 3 channels)")
-                                    ax.legend(loc='upper right')
-                                    ax.grid(True, alpha=0.3)
-                                    plot_idx += 1
-                                
-                                # Frequency bands plot
-                                if show_bands:
-                                    ax = axes[plot_idx]
-                                    bands = ['Delta\n0.5-4Hz', 'Theta\n4-8Hz', 'Alpha\n8-13Hz', 
-                                            'Beta\n13-30Hz', 'Gamma\n30-50Hz']
-                                    powers = [results['band_statistics'][b.split('\n')[0].lower()]['mean'] 
-                                             for b in bands]
-                                    colors = ['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000']
-                                    bars = ax.bar(bands, powers, color=colors, alpha=0.7, edgecolor='black')
-                                    ax.set_ylabel("Mean Power (µV)")
-                                    ax.set_title("EEG Frequency Band Analysis")
-                                    ax.grid(True, alpha=0.3, axis='y')
-                                    
-                                    for bar, power in zip(bars, powers):
-                                        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
-                                               f'{power:.1f}', ha='center', va='bottom', fontweight='bold')
-                                    plot_idx += 1
-                                
-                                # Criticality evolution plot
-                                if show_criticality:
-                                    ax = axes[plot_idx]
-                                    colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red'
-                                             for s in results['state_evolution']]
-                                    ax.scatter(results['times'], results['r_evolution'], 
-                                              c=colors, alpha=0.7, s=50, edgecolors='black')
-                                    ax.axhline(y=3.57, color='red', linestyle='--', 
-                                              alpha=0.5, label='Chaos Threshold (3.57)', linewidth=2)
-                                    ax.axhline(y=3.0, color='green', linestyle='--', 
-                                              alpha=0.3, label='Stability Threshold (3.0)')
-                                    ax.fill_between(results['times'], 3.57, 4.0, alpha=0.1, color='red')
-                                    ax.set_xlabel("Time (s)")
-                                    ax.set_ylabel("R Parameter")
-                                    ax.set_title("Brain State Criticality Evolution (Logistic Map)")
-                                    ax.legend(loc='upper right')
-                                    ax.grid(True, alpha=0.3)
-                                    ax.set_ylim([2.5, 4.0])
-                                    plot_idx += 1
-                                
-                                # Lyapunov exponents plot
-                                if show_lyapunov and 'lyapunov_evolution' in results:
-                                    ax = axes[plot_idx]
-                                    lyap_values = results['lyapunov_evolution']
-                                    ax.plot(results['times'][:len(lyap_values)], lyap_values, 
-                                           'b-', linewidth=2, label='Lyapunov Exponent')
-                                    ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
-                                    ax.axhline(y=0.1, color='red', linestyle='--', 
-                                              alpha=0.5, label='Chaos Threshold (λ>0.1)')
-                                    ax.fill_between(results['times'][:len(lyap_values)], 
-                                                   0, lyap_values, where=[l > 0 for l in lyap_values],
-                                                   alpha=0.3, color='red', label='Chaotic regions')
-                                    ax.set_xlabel("Time (s)")
-                                    ax.set_ylabel("Lyapunov Exponent (λ)")
-                                    ax.set_title("Lyapunov Exponents - Chaos Indicator")
-                                    ax.legend(loc='upper right')
-                                    ax.grid(True, alpha=0.3)
-                                
-                                plt.tight_layout()
-                                st.pyplot(fig)
-                        
-                        # Generate comprehensive report
-                        report = generate_comprehensive_report(results, 
-                                                              REAL_DATABASES[database_id]['name'],
-                                                              extracted_data)
-                        
-                        # Display report
-                        with st.expander("📄 Full Analysis Report", expanded=True):
-                            st.markdown(report)
-                        
-                        # Download options
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.download_button(
-                                "💾 Download Report (Markdown)",
-                                data=report,
-                                file_name=f"eeg_report_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                                mime="text/markdown"
-                            )
-                        
-                        with col2:
-                            # Create JSON with all results
-                            json_results = {
-                                "database": database_id,
-                                "analysis_date": datetime.now().isoformat(),
-                                "results": results,
-                                "parameters": {
-                                    "window_size": window_size,
-                                    "step_size": step_size,
-                                    "sampling_rate": fs
-                                }
-                            }
-                            st.download_button(
-                                "📊 Download Raw Data (JSON)",
-                                data=json.dumps(json_results, indent=2, default=str),
-                                file_name=f"eeg_data_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                                mime="application/json"
-                            )
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error processing data: {str(e)}")
-                        
-                        # Provide detailed debugging information
-                        with st.expander("🔍 Debug Information", expanded=True):
-                            st.write("**Error Details:**")
-                            st.code(str(e))
-                            
-                            if "could not convert string to float" in str(e):
-                                st.warning("""
-                                **Common causes for this error:**
-                                1. The CSV file contains non-numeric columns (e.g., gender: M/F, labels, text)
-                                2. Missing or corrupted data values
-                                3. Incorrect delimiter or encoding
-                                
-                                **Solution:** The system will now attempt to filter out non-numeric columns automatically.
-                                """)
-                            
-                            st.write("\n**Files in archive:**")
-                            for f in extracted_data.get("files", [])[:10]:
-                                st.write(f"• {f}")
-                            
-                            st.write("\n**Attempting to use demo data instead...**")
-                            
-                            # Fall back to demo data
-                            try:
-                                signals, fs, channels = processor.generate_demo_data()
-                                st.success("✅ Using demo data for demonstration")
-                                
-                                # Continue with demo data analysis
-                                with st.spinner("📊 Analyzing demo data..."):
-                                    times, band_features, advanced_features = processor.extract_advanced_features(
-                                        signals, fs, window_size, step_size
-                                    )
-                                    results = processor.compute_criticality_with_chaos(
-                                        band_features, advanced_features, times
-                                    )
-                                
-                                st.success("✅ Demo Analysis Complete!")
-                                
-                                # Display results 
-                                col1, col2, col3, col4, col5 = st.columns(5)
-                                
-                                with col1:
-                                    color = "🔴" if results['criticality_ratio'] > 0.4 else "🟡" if results['criticality_ratio'] > 0.2 else "🟢"
-                                    st.metric(f"{color} Criticality", f"{results['criticality_ratio']:.1%}")
-                                
-                                with col2:
-                                    st.metric("Brain State", results['final_state'].replace('_', ' ').title())
-                                
-                                with col3:
-                                    st.metric("Mean R", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
-                                
-                                with col4:
-                                    st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
-                                
-                                with col5:
-                                    st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%")
-                                
-                                st.info("📌 Note: Using demo data due to issues with the original dataset. Results shown are for demonstration purposes.")
-                                
-                            except Exception as demo_error:
-                                st.error(f"Could not generate demo data: {str(demo_error)}")
-                        
-                        st.info("💡 If the problem persists, try the Demo Database option or contact support.")
-                else:
-                    st.warning("⚠️ No valid files found in the archive.")
-            else:
-                st.error(f"❌ Failed to download dataset: {message}")
-                st.info("💡 Please check your internet connection or try again later.")
-                
-        except Exception as main_error:
-            st.error(f"❌ An unexpected error occurred: {str(main_error)}")
-            st.info("💡 Please try refreshing the page or contact support.")
+            **Format:** {db_info['format'].upper()}
+            
+            **Description:** {db_info['description']}
+            """)
+        
+        st.subheader("🔧 Analysis Settings")
+        sampling_rate = st.number_input("Sampling Rate (Hz)", 100, 1000, 256)
+        window_size = st.slider("Window Size (seconds)", 1.0, 5.0, 2.0)
     
-    # Information footer
-    with st.expander("ℹ️ About This Platform"):
-        st.markdown("""
-        ### Advanced Features
+    # Main content - Three step process
+    st.header("📊 EEG Analysis Workflow")
+    
+    # Create three columns for the workflow
+    step1, step2, step3 = st.columns(3)
+    
+    # STEP 1: DOWNLOAD
+    with step1:
+        st.subheader("Step 1️⃣: Download Data")
         
-        **🌊 Wavelet Analysis**
-        - Decomposes EEG signals into time-frequency components
-        - Provides better temporal resolution than FFT
-        - Captures transient events and non-stationary dynamics
+        if database_id:
+            st.write(f"**Selected:** {database_names.get(database_id, database_id)}")
+            
+            if st.button("📥 Download Dataset", use_container_width=True, key="download_btn"):
+                with st.spinner("Downloading..."):
+                    success, content, message = downloader.download_dataset(database_id)
+                    
+                    if success and content:
+                        st.session_state['downloaded_data'] = {
+                            'content': content,
+                            'database': database_id,
+                            'timestamp': datetime.now()
+                        }
+                        st.success(f"✅ {message}")
+                        st.info(f"Size: {len(content) / 1024:.1f} KB")
+                    else:
+                        st.error(f"❌ {message}")
         
-        **📈 Lyapunov Exponents**
-        - Measures the rate of divergence of nearby trajectories
-        - Positive values indicate chaotic dynamics
-        - Critical for identifying edge-of-chaos states
+        # Show download status
+        if st.session_state.get('downloaded_data'):
+            st.success("✅ Data Downloaded")
+            st.caption(f"Downloaded at {st.session_state['downloaded_data']['timestamp'].strftime('%H:%M:%S')}")
+        else:
+            st.info("⏳ No data downloaded yet")
+    
+    # STEP 2: PARSE
+    with step2:
+        st.subheader("Step 2️⃣: Parse & Validate")
         
-        **🔄 Logistic Map Dynamics**
-        - Models brain state transitions using chaos theory
-        - R parameter evolution tracks criticality
-        - R > 3.57 indicates chaotic regime
+        if st.session_state.get('downloaded_data'):
+            if st.button("🔍 Parse Data", use_container_width=True, key="parse_btn"):
+                with st.spinner("Parsing..."):
+                    zip_content = st.session_state['downloaded_data']['content']
+                    
+                    # Extract zip contents
+                    extracted = parser.extract_zip_contents(zip_content)
+                    
+                    st.write(f"**Files found:** {len(extracted['files'])}")
+                    st.write(f"- CSV files: {len(extracted['csv_files'])}")
+                    st.write(f"- TXT files: {len(extracted['txt_files'])}")
+                    
+                    # Try to parse CSV files
+                    valid_data = None
+                    for csv_file in extracted['csv_files']:
+                        df = parser.parse_csv_file(zip_content, csv_file)
+                        if df is not None:
+                            is_valid, eeg_cols, msg = parser.validate_eeg_data(df)
+                            if is_valid:
+                                st.success(f"✅ Valid EEG in {csv_file}")
+                                st.write(f"Channels: {len(eeg_cols)}")
+                                st.write(f"Samples: {len(df)}")
+                                
+                                # Prepare data array
+                                eeg_array = parser.prepare_eeg_array(df, eeg_cols)
+                                
+                                st.session_state['parsed_data'] = {
+                                    'signals': eeg_array,
+                                    'channels': eeg_cols[:eeg_array.shape[0]],
+                                    'filename': csv_file,
+                                    'sampling_rate': sampling_rate
+                                }
+                                valid_data = True
+                                break
+                            else:
+                                st.warning(f"⚠️ {csv_file}: {msg}")
+                    
+                    if not valid_data:
+                        st.error("❌ No valid EEG data found")
+        else:
+            st.info("⏳ Download data first")
         
-        **📊 Integrated Analysis**
-        - Combines multiple chaos indicators
-        - Provides comprehensive brain state assessment
-        - Suitable for research and clinical applications
-        """)
+        # Show parse status
+        if st.session_state.get('parsed_data'):
+            st.success("✅ Data Parsed")
+            data = st.session_state['parsed_data']
+            st.caption(f"{data['signals'].shape[0]} channels × {data['signals'].shape[1]} samples")
+        else:
+            st.info("⏳ No data parsed yet")
+    
+    # STEP 3: ANALYZE
+    with step3:
+        st.subheader("Step 3️⃣: Analyze EEG")
+        
+        if st.session_state.get('parsed_data'):
+            if st.button("🧠 Analyze", use_container_width=True, key="analyze_btn"):
+                with st.spinner("Analyzing..."):
+                    data = st.session_state['parsed_data']
+                    
+                    # Perform analysis
+                    results = analyzer.analyze_eeg(
+                        data['signals'],
+                        data['sampling_rate']
+                    )
+                    
+                    st.session_state['analysis_results'] = results
+                    
+                    # Show key metrics
+                    st.metric("Criticality", results['criticality'])
+                    st.metric("Chaos %", f"{results['chaos_percentage']:.1f}%")
+                    st.metric("Lyapunov", f"{results['mean_lyapunov']:.3f}")
+        else:
+            st.info("⏳ Parse data first")
+        
+        # Show analysis status
+        if st.session_state.get('analysis_results'):
+            st.success("✅ Analysis Complete")
+        else:
+            st.info("⏳ No analysis yet")
+    
+    # Results Section
+    if st.session_state.get('analysis_results'):
+        st.header("📈 Analysis Results")
+        
+        results = st.session_state['analysis_results']
+        
+        # Metrics row
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            color = "🔴" if results['criticality'] == "HIGH" else "🟡" if results['criticality'] == "MODERATE" else "🟢"
+            st.metric(f"{color} Criticality", results['criticality'])
+        
+        with col2:
+            st.metric("R Parameter", f"{results['mean_r_parameter']:.3f}")
+        
+        with col3:
+            st.metric("Lyapunov", f"{results['mean_lyapunov']:.4f}")
+        
+        with col4:
+            st.metric("Chaos %", f"{results['chaos_percentage']:.1f}%")
+        
+        with col5:
+            st.metric("Duration", f"{results['duration_seconds']:.1f}s")
+        
+        # Frequency bands
+        st.subheader("🌊 Frequency Band Powers")
+        band_df = pd.DataFrame([results['band_powers']])
+        st.dataframe(band_df, use_container_width=True)
+        
+        # Visualization
+        if HAS_MATPLOTLIB:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+            
+            # Band powers bar chart
+            bands = list(results['band_powers'].keys())
+            powers = list(results['band_powers'].values())
+            colors = ['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000']
+            
+            ax1.bar(bands, powers, color=colors)
+            ax1.set_ylabel("Power (µV²)")
+            ax1.set_title("Frequency Band Analysis")
+            ax1.grid(True, alpha=0.3)
+            
+            # Signal preview (first channel, first 1000 samples)
+            if st.session_state.get('parsed_data'):
+                signal = st.session_state['parsed_data']['signals'][0][:1000]
+                time = np.arange(len(signal)) / results['sampling_rate']
+                ax2.plot(time, signal, 'b-', alpha=0.7)
+                ax2.set_xlabel("Time (s)")
+                ax2.set_ylabel("Amplitude (µV)")
+                ax2.set_title("EEG Signal Preview (Channel 1)")
+                ax2.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+        
+        # Report
+        st.subheader("📄 Analysis Report")
+        report = f"""
+        ## EEG Analysis Report
+        
+        **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        **Database:** {st.session_state['downloaded_data']['database']}
+        **File:** {st.session_state['parsed_data']['filename']}
+        
+        ### Signal Properties
+        - Channels: {results['n_channels']}
+        - Samples: {results['n_samples']}
+        - Sampling Rate: {results['sampling_rate']} Hz
+        - Duration: {results['duration_seconds']:.2f} seconds
+        
+        ### Chaos Metrics
+        - Mean R Parameter: {results['mean_r_parameter']:.4f}
+        - Mean Lyapunov Exponent: {results['mean_lyapunov']:.4f}
+        - Chaos Percentage: {results['chaos_percentage']:.2f}%
+        - Criticality Level: {results['criticality']}
+        
+        ### Frequency Analysis
+        - Delta (0.5-4 Hz): {results['band_powers']['delta']:.2f}
+        - Theta (4-8 Hz): {results['band_powers']['theta']:.2f}
+        - Alpha (8-13 Hz): {results['band_powers']['alpha']:.2f}
+        - Beta (13-30 Hz): {results['band_powers']['beta']:.2f}
+        - Gamma (30-50 Hz): {results['band_powers']['gamma']:.2f}
+        """
+        
+        st.text_area("Report", report, height=400)
+        
+        # Download button
+        st.download_button(
+            "📥 Download Report",
+            data=report,
+            file_name=f"eeg_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain"
+        )
 
 if __name__ == "__main__":
     main()

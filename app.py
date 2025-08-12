@@ -1100,7 +1100,7 @@ def main():
                             st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
                         
                         with col5:
-                            st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%}")
+                            st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%")
                         
                         # Visualizations
                         if HAS_MATPLOTLIB:
@@ -1282,7 +1282,7 @@ def main():
                                     st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
                                 
                                 with col5:
-                                    st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%}")
+                                    st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%")
                                 
                                 st.info("📌 Note: Using demo data due to issues with the original dataset. Results shown are for demonstration purposes.")
                                 

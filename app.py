@@ -1029,210 +1029,276 @@ def main():
                 
                 if extracted_data["files"]:
                     st.success(f"✅ Found {len(extracted_data['files'])} files in archive")
-                
-                # Show extracted files
-                with st.expander(f"📁 Archive Contents ({len(extracted_data['files'])} files)", expanded=True):
-                    # Show file list
-                    st.write("**Files found:**")
-                    cols = st.columns(2)
-                    for idx, file in enumerate(extracted_data['files'][:20]):
-                        cols[idx % 2].write(f"• {file}")
-                    if len(extracted_data['files']) > 20:
-                        st.write(f"... and {len(extracted_data['files']) - 20} more files")
                     
-                    # Show data preview if available
-                    if extracted_data["eeg_data"]:
-                        st.write("\n**📊 Data Preview:**")
-                        for i, eeg_item in enumerate(extracted_data["eeg_data"][:3]):  # Show first 3 files
-                            if isinstance(eeg_item["data"], pd.DataFrame):
-                                df = eeg_item["data"]
-                                st.write(f"\n**File:** {eeg_item['filename']}")
-                                st.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-                                st.write("Columns:", list(df.columns)[:10])
-                                if len(df.columns) > 10:
-                                    st.write(f"... and {len(df.columns) - 10} more columns")
-                                
-                                # Show first few rows
-                                st.write("First 5 rows:")
-                                st.dataframe(df.head(), use_container_width=True)
-                            elif isinstance(eeg_item["data"], np.ndarray):
-                                st.write(f"\n**File:** {eeg_item['filename']}")
-                                st.write(f"Array shape: {eeg_item['data'].shape}")
-                                st.write(f"Data type: Single channel numeric")
-                    
-                    if extracted_data["subjects"]:
-                        st.write(f"\n**Subjects found:** {', '.join(extracted_data['subjects'][:10])}")
-                
-                # Process EEG data
-                try:
-                    with st.spinner("🧠 Processing EEG signals..."):
-                        signals, fs, channels = processor.process_eeg_data(extracted_data)
-                        st.success(f"✅ Loaded {len(channels)} channels at {fs} Hz sampling rate")
-                    
-                    # Extract features
-                    with st.spinner("📊 Extracting features with wavelets and computing Lyapunov exponents..."):
-                        times, band_features, advanced_features = processor.extract_advanced_features(
-                            signals, fs, window_size, step_size
-                        )
+                    # Show extracted files
+                    with st.expander(f"📁 Archive Contents ({len(extracted_data['files'])} files)", expanded=True):
+                        # Show file list
+                        st.write("**Files found:**")
+                        cols = st.columns(2)
+                        for idx, file in enumerate(extracted_data['files'][:20]):
+                            cols[idx % 2].write(f"• {file}")
+                        if len(extracted_data['files']) > 20:
+                            st.write(f"... and {len(extracted_data['files']) - 20} more files")
                         
-                    # Compute criticality
-                    with st.spinner("🔮 Computing criticality metrics using chaos theory..."):
-                        results = processor.compute_criticality_with_chaos(
-                            band_features, advanced_features, times
-                        )
-                    
-                    st.success("✅ Analysis Complete!")
-                    
-                    # Display key metrics
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    
-                    with col1:
-                        color = "🔴" if results['criticality_ratio'] > 0.4 else "🟡" if results['criticality_ratio'] > 0.2 else "🟢"
-                        st.metric(f"{color} Criticality", f"{results['criticality_ratio']:.1%}")
-                    
-                    with col2:
-                        st.metric("Brain State", results['final_state'].replace('_', ' ').title())
-                    
-                    with col3:
-                        st.metric("Mean R", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
-                    
-                    with col4:
-                        st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
-                    
-                    with col5:
-                        st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%")
-                    
-                    # Visualizations
-                    if HAS_MATPLOTLIB:
-                        # Count plots to show
-                        n_plots = sum([show_raw, show_bands, show_criticality, show_lyapunov])
+                        # Show data preview if available
+                        if extracted_data["eeg_data"]:
+                            st.write("\n**📊 Data Preview:**")
+                            for i, eeg_item in enumerate(extracted_data["eeg_data"][:3]):  # Show first 3 files
+                                if isinstance(eeg_item["data"], pd.DataFrame):
+                                    df = eeg_item["data"]
+                                    st.write(f"\n**File:** {eeg_item['filename']}")
+                                    st.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+                                    st.write("Columns:", list(df.columns)[:10])
+                                    if len(df.columns) > 10:
+                                        st.write(f"... and {len(df.columns) - 10} more columns")
+                                    
+                                    # Show first few rows
+                                    st.write("First 5 rows:")
+                                    st.dataframe(df.head(), use_container_width=True)
+                                elif isinstance(eeg_item["data"], np.ndarray):
+                                    st.write(f"\n**File:** {eeg_item['filename']}")
+                                    st.write(f"Array shape: {eeg_item['data'].shape}")
+                                    st.write(f"Data type: Single channel numeric")
                         
-                        if n_plots > 0:
-                            fig, axes = plt.subplots(n_plots, 1, figsize=(14, 4*n_plots))
-                            if n_plots == 1:
-                                axes = [axes]
+                        if extracted_data["subjects"]:
+                            st.write(f"\n**Subjects found:** {', '.join(extracted_data['subjects'][:10])}")
+                    
+                    # Process EEG data
+                    try:
+                        with st.spinner("🧠 Processing EEG signals..."):
+                            signals, fs, channels = processor.process_eeg_data(extracted_data)
+                            st.success(f"✅ Loaded {len(channels)} channels at {fs} Hz sampling rate")
+                        
+                        # Extract features
+                        with st.spinner("📊 Extracting features with wavelets and computing Lyapunov exponents..."):
+                            times, band_features, advanced_features = processor.extract_advanced_features(
+                                signals, fs, window_size, step_size
+                            )
                             
-                            plot_idx = 0
+                        # Compute criticality
+                        with st.spinner("🔮 Computing criticality metrics using chaos theory..."):
+                            results = processor.compute_criticality_with_chaos(
+                                band_features, advanced_features, times
+                            )
+                        
+                        st.success("✅ Analysis Complete!")
+                        
+                        # Display key metrics
+                        col1, col2, col3, col4, col5 = st.columns(5)
+                        
+                        with col1:
+                            color = "🔴" if results['criticality_ratio'] > 0.4 else "🟡" if results['criticality_ratio'] > 0.2 else "🟢"
+                            st.metric(f"{color} Criticality", f"{results['criticality_ratio']:.1%}")
+                        
+                        with col2:
+                            st.metric("Brain State", results['final_state'].replace('_', ' ').title())
+                        
+                        with col3:
+                            st.metric("Mean R", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
+                        
+                        with col4:
+                            st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
+                        
+                        with col5:
+                            st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%}")
+                        
+                        # Visualizations
+                        if HAS_MATPLOTLIB:
+                            # Count plots to show
+                            n_plots = sum([show_raw, show_bands, show_criticality, show_lyapunov])
                             
-                            # Raw signals plot
-                            if show_raw:
-                                ax = axes[plot_idx]
-                                time_vec = np.arange(min(2000, signals.shape[1])) / fs
-                                for i in range(min(3, len(channels))):
-                                    ax.plot(time_vec, signals[i, :len(time_vec)] + i*50, 
-                                           label=channels[i], alpha=0.7)
-                                ax.set_xlabel("Time (s)")
-                                ax.set_ylabel("Amplitude (µV)")
-                                ax.set_title("Raw EEG Signals (First 3 channels)")
-                                ax.legend(loc='upper right')
-                                ax.grid(True, alpha=0.3)
-                                plot_idx += 1
-                            
-                            # Frequency bands plot
-                            if show_bands:
-                                ax = axes[plot_idx]
-                                bands = ['Delta\n0.5-4Hz', 'Theta\n4-8Hz', 'Alpha\n8-13Hz', 
-                                        'Beta\n13-30Hz', 'Gamma\n30-50Hz']
-                                powers = [results['band_statistics'][b.split('\n')[0].lower()]['mean'] 
-                                         for b in bands]
-                                colors = ['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000']
-                                bars = ax.bar(bands, powers, color=colors, alpha=0.7, edgecolor='black')
-                                ax.set_ylabel("Mean Power (µV)")
-                                ax.set_title("EEG Frequency Band Analysis")
-                                ax.grid(True, alpha=0.3, axis='y')
+                            if n_plots > 0:
+                                fig, axes = plt.subplots(n_plots, 1, figsize=(14, 4*n_plots))
+                                if n_plots == 1:
+                                    axes = [axes]
                                 
-                                for bar, power in zip(bars, powers):
-                                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
-                                           f'{power:.1f}', ha='center', va='bottom', fontweight='bold')
-                                plot_idx += 1
-                            
-                            # Criticality evolution plot
-                            if show_criticality:
-                                ax = axes[plot_idx]
-                                colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red'
-                                         for s in results['state_evolution']]
-                                ax.scatter(results['times'], results['r_evolution'], 
-                                          c=colors, alpha=0.7, s=50, edgecolors='black')
-                                ax.axhline(y=3.57, color='red', linestyle='--', 
-                                          alpha=0.5, label='Chaos Threshold (3.57)', linewidth=2)
-                                ax.axhline(y=3.0, color='green', linestyle='--', 
-                                          alpha=0.3, label='Stability Threshold (3.0)')
-                                ax.fill_between(results['times'], 3.57, 4.0, alpha=0.1, color='red')
-                                ax.set_xlabel("Time (s)")
-                                ax.set_ylabel("R Parameter")
-                                ax.set_title("Brain State Criticality Evolution (Logistic Map)")
-                                ax.legend(loc='upper right')
-                                ax.grid(True, alpha=0.3)
-                                ax.set_ylim([2.5, 4.0])
-                                plot_idx += 1
-                            
-                            # Lyapunov exponents plot
-                            if show_lyapunov and 'lyapunov_evolution' in results:
-                                ax = axes[plot_idx]
-                                lyap_values = results['lyapunov_evolution']
-                                ax.plot(results['times'][:len(lyap_values)], lyap_values, 
-                                       'b-', linewidth=2, label='Lyapunov Exponent')
-                                ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
-                                ax.axhline(y=0.1, color='red', linestyle='--', 
-                                          alpha=0.5, label='Chaos Threshold (λ>0.1)')
-                                ax.fill_between(results['times'][:len(lyap_values)], 
-                                               0, lyap_values, where=[l > 0 for l in lyap_values],
-                                               alpha=0.3, color='red', label='Chaotic regions')
-                                ax.set_xlabel("Time (s)")
-                                ax.set_ylabel("Lyapunov Exponent (λ)")
-                                ax.set_title("Lyapunov Exponents - Chaos Indicator")
-                                ax.legend(loc='upper right')
-                                ax.grid(True, alpha=0.3)
-                            
-                            plt.tight_layout()
-                            st.pyplot(fig)
-                    
-                    # Generate comprehensive report
-                    report = generate_comprehensive_report(results, 
-                                                          REAL_DATABASES[database_id]['name'],
-                                                          extracted_data)
-                    
-                    # Display report
-                    with st.expander("📄 Full Analysis Report", expanded=True):
-                        st.markdown(report)
-                    
-                    # Download options
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.download_button(
-                            "💾 Download Report (Markdown)",
-                            data=report,
-                            file_name=f"eeg_report_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                            mime="text/markdown"
-                        )
-                    
-                    with col2:
-                        # Create JSON with all results
-                        json_results = {
-                            "database": database_id,
-                            "analysis_date": datetime.now().isoformat(),
-                            "results": results,
-                            "parameters": {
-                                "window_size": window_size,
-                                "step_size": step_size,
-                                "sampling_rate": fs
+                                plot_idx = 0
+                                
+                                # Raw signals plot
+                                if show_raw:
+                                    ax = axes[plot_idx]
+                                    time_vec = np.arange(min(2000, signals.shape[1])) / fs
+                                    for i in range(min(3, len(channels))):
+                                        ax.plot(time_vec, signals[i, :len(time_vec)] + i*50, 
+                                               label=channels[i], alpha=0.7)
+                                    ax.set_xlabel("Time (s)")
+                                    ax.set_ylabel("Amplitude (µV)")
+                                    ax.set_title("Raw EEG Signals (First 3 channels)")
+                                    ax.legend(loc='upper right')
+                                    ax.grid(True, alpha=0.3)
+                                    plot_idx += 1
+                                
+                                # Frequency bands plot
+                                if show_bands:
+                                    ax = axes[plot_idx]
+                                    bands = ['Delta\n0.5-4Hz', 'Theta\n4-8Hz', 'Alpha\n8-13Hz', 
+                                            'Beta\n13-30Hz', 'Gamma\n30-50Hz']
+                                    powers = [results['band_statistics'][b.split('\n')[0].lower()]['mean'] 
+                                             for b in bands]
+                                    colors = ['#4B0082', '#0000FF', '#00FF00', '#FFA500', '#FF0000']
+                                    bars = ax.bar(bands, powers, color=colors, alpha=0.7, edgecolor='black')
+                                    ax.set_ylabel("Mean Power (µV)")
+                                    ax.set_title("EEG Frequency Band Analysis")
+                                    ax.grid(True, alpha=0.3, axis='y')
+                                    
+                                    for bar, power in zip(bars, powers):
+                                        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                                               f'{power:.1f}', ha='center', va='bottom', fontweight='bold')
+                                    plot_idx += 1
+                                
+                                # Criticality evolution plot
+                                if show_criticality:
+                                    ax = axes[plot_idx]
+                                    colors = ['green' if s == 'stable' else 'orange' if s == 'transitional' else 'red'
+                                             for s in results['state_evolution']]
+                                    ax.scatter(results['times'], results['r_evolution'], 
+                                              c=colors, alpha=0.7, s=50, edgecolors='black')
+                                    ax.axhline(y=3.57, color='red', linestyle='--', 
+                                              alpha=0.5, label='Chaos Threshold (3.57)', linewidth=2)
+                                    ax.axhline(y=3.0, color='green', linestyle='--', 
+                                              alpha=0.3, label='Stability Threshold (3.0)')
+                                    ax.fill_between(results['times'], 3.57, 4.0, alpha=0.1, color='red')
+                                    ax.set_xlabel("Time (s)")
+                                    ax.set_ylabel("R Parameter")
+                                    ax.set_title("Brain State Criticality Evolution (Logistic Map)")
+                                    ax.legend(loc='upper right')
+                                    ax.grid(True, alpha=0.3)
+                                    ax.set_ylim([2.5, 4.0])
+                                    plot_idx += 1
+                                
+                                # Lyapunov exponents plot
+                                if show_lyapunov and 'lyapunov_evolution' in results:
+                                    ax = axes[plot_idx]
+                                    lyap_values = results['lyapunov_evolution']
+                                    ax.plot(results['times'][:len(lyap_values)], lyap_values, 
+                                           'b-', linewidth=2, label='Lyapunov Exponent')
+                                    ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+                                    ax.axhline(y=0.1, color='red', linestyle='--', 
+                                              alpha=0.5, label='Chaos Threshold (λ>0.1)')
+                                    ax.fill_between(results['times'][:len(lyap_values)], 
+                                                   0, lyap_values, where=[l > 0 for l in lyap_values],
+                                                   alpha=0.3, color='red', label='Chaotic regions')
+                                    ax.set_xlabel("Time (s)")
+                                    ax.set_ylabel("Lyapunov Exponent (λ)")
+                                    ax.set_title("Lyapunov Exponents - Chaos Indicator")
+                                    ax.legend(loc='upper right')
+                                    ax.grid(True, alpha=0.3)
+                                
+                                plt.tight_layout()
+                                st.pyplot(fig)
+                        
+                        # Generate comprehensive report
+                        report = generate_comprehensive_report(results, 
+                                                              REAL_DATABASES[database_id]['name'],
+                                                              extracted_data)
+                        
+                        # Display report
+                        with st.expander("📄 Full Analysis Report", expanded=True):
+                            st.markdown(report)
+                        
+                        # Download options
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.download_button(
+                                "💾 Download Report (Markdown)",
+                                data=report,
+                                file_name=f"eeg_report_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                                mime="text/markdown"
+                            )
+                        
+                        with col2:
+                            # Create JSON with all results
+                            json_results = {
+                                "database": database_id,
+                                "analysis_date": datetime.now().isoformat(),
+                                "results": results,
+                                "parameters": {
+                                    "window_size": window_size,
+                                    "step_size": step_size,
+                                    "sampling_rate": fs
+                                }
                             }
-                        }
-                        st.download_button(
-                            "📊 Download Raw Data (JSON)",
-                            data=json.dumps(json_results, indent=2, default=str),
-                            file_name=f"eeg_data_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                            mime="application/json"
-                        )
-                    
-                except Exception as e:
-                    st.error(f"❌ Error processing data: {str(e)}")
-                    st.info("💡 Try adjusting the analysis parameters or contact support if the issue persists.")
+                            st.download_button(
+                                "📊 Download Raw Data (JSON)",
+                                data=json.dumps(json_results, indent=2, default=str),
+                                file_name=f"eeg_data_{database_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                                mime="application/json"
+                            )
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error processing data: {str(e)}")
+                        
+                        # Provide detailed debugging information
+                        with st.expander("🔍 Debug Information", expanded=True):
+                            st.write("**Error Details:**")
+                            st.code(str(e))
+                            
+                            if "could not convert string to float" in str(e):
+                                st.warning("""
+                                **Common causes for this error:**
+                                1. The CSV file contains non-numeric columns (e.g., gender: M/F, labels, text)
+                                2. Missing or corrupted data values
+                                3. Incorrect delimiter or encoding
+                                
+                                **Solution:** The system will now attempt to filter out non-numeric columns automatically.
+                                """)
+                            
+                            st.write("\n**Files in archive:**")
+                            for f in extracted_data.get("files", [])[:10]:
+                                st.write(f"• {f}")
+                            
+                            st.write("\n**Attempting to use demo data instead...**")
+                            
+                            # Fall back to demo data
+                            try:
+                                signals, fs, channels = processor.generate_demo_data()
+                                st.success("✅ Using demo data for demonstration")
+                                
+                                # Continue with demo data analysis
+                                with st.spinner("📊 Analyzing demo data..."):
+                                    times, band_features, advanced_features = processor.extract_advanced_features(
+                                        signals, fs, window_size, step_size
+                                    )
+                                    results = processor.compute_criticality_with_chaos(
+                                        band_features, advanced_features, times
+                                    )
+                                
+                                st.success("✅ Demo Analysis Complete!")
+                                
+                                # Display results 
+                                col1, col2, col3, col4, col5 = st.columns(5)
+                                
+                                with col1:
+                                    color = "🔴" if results['criticality_ratio'] > 0.4 else "🟡" if results['criticality_ratio'] > 0.2 else "🟢"
+                                    st.metric(f"{color} Criticality", f"{results['criticality_ratio']:.1%}")
+                                
+                                with col2:
+                                    st.metric("Brain State", results['final_state'].replace('_', ' ').title())
+                                
+                                with col3:
+                                    st.metric("Mean R", f"{results['complexity_metrics']['mean_r_parameter']:.3f}")
+                                
+                                with col4:
+                                    st.metric("Mean Lyapunov", f"{results['complexity_metrics']['mean_lyapunov']:.4f}")
+                                
+                                with col5:
+                                    st.metric("Chaos %", f"{results['complexity_metrics']['chaos_percentage']:.1f}%}")
+                                
+                                st.info("📌 Note: Using demo data due to issues with the original dataset. Results shown are for demonstration purposes.")
+                                
+                            except Exception as demo_error:
+                                st.error(f"Could not generate demo data: {str(demo_error)}")
+                        
+                        st.info("💡 If the problem persists, try the Demo Database option or contact support.")
+                else:
+                    st.warning("⚠️ No valid files found in the archive.")
             else:
-                st.warning("⚠️ No valid EEG data found in the archive. The file may be corrupted or in an unsupported format.")
-        else:
-            st.error(f"❌ Failed to download dataset: {message}")
-            st.info("💡 Please check your internet connection or try again later.")
+                st.error(f"❌ Failed to download dataset: {message}")
+                st.info("💡 Please check your internet connection or try again later.")
+                
+        except Exception as main_error:
+            st.error(f"❌ An unexpected error occurred: {str(main_error)}")
+            st.info("💡 Please try refreshing the page or contact support.")
     
     # Information footer
     with st.expander("ℹ️ About This Platform"):

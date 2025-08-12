@@ -117,6 +117,15 @@ REAL_DATABASES = {
         "format": "zip",
         "citation": "Alcohol Neuroscience Study",
         "expected_criticality": "Moderate - increased with intoxication levels"
+    },
+    "demo_database": {
+        "name": "🎮 Demo EEG Database",
+        "description": "Generated demonstration EEG patterns for testing",
+        "url": "demo",
+        "type": "demo",
+        "format": "generated",
+        "citation": "Simulated data for demonstration",
+        "expected_criticality": "Configurable - for testing purposes"
     }
 }
 
@@ -212,6 +221,38 @@ class DataDownloader:
         
         db_config = REAL_DATABASES[database_id]
         
+        # Handle demo database
+        if db_config["type"] == "demo":
+            st.info("🎮 Using demo database - generating sample data...")
+            # Create a fake zip with demo CSV data
+            import io
+            import zipfile
+            
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w') as zf:
+                # Generate demo EEG data
+                fs = 256
+                duration = 30
+                n_channels = 8
+                n_samples = fs * duration
+                time = np.linspace(0, duration, n_samples)
+                
+                # Create demo CSV data
+                data = {
+                    'Time': time
+                }
+                for ch in range(n_channels):
+                    signal = 30 * np.sin(2 * np.pi * 10 * time + np.random.random() * 2 * np.pi)
+                    signal += 20 * np.sin(2 * np.pi * 20 * time + np.random.random() * 2 * np.pi)
+                    signal += np.random.normal(0, 5, n_samples)
+                    data[f'CH_{ch+1}'] = signal
+                
+                df = pd.DataFrame(data)
+                csv_content = df.to_csv(index=False)
+                zf.writestr('demo_eeg_data.csv', csv_content)
+            
+            return True, zip_buffer.getvalue(), "Demo data generated successfully"
+        
         with st.spinner(f"📥 Downloading {db_config['name']}..."):
             if db_config["type"] == "github":
                 return self.download_from_github(db_config["url"])
@@ -234,41 +275,80 @@ class DataDownloader:
             with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zf:
                 extracted_data["files"] = zf.namelist()
                 
+                st.info(f"📦 Found {len(extracted_data['files'])} files in archive")
+                
                 for filename in zf.namelist():
+                    # Skip directories and system files
+                    if filename.endswith('/') or filename.startswith('__') or filename.startswith('.'):
+                        continue
+                    
                     if filename.endswith('.csv'):
-                        with zf.open(filename) as f:
-                            df = pd.read_csv(io.BytesIO(f.read()))
-                            extracted_data["eeg_data"].append({
-                                "filename": filename,
-                                "data": df,
-                                "shape": df.shape,
-                                "columns": list(df.columns)
-                            })
-                            
-                            # Extract subject IDs
-                            subject_match = re.search(r'[SP]\d{3}|subject_\d+|sub\d+|participant_\d+', filename, re.I)
-                            if subject_match:
-                                extracted_data["subjects"].append(subject_match.group())
+                        try:
+                            with zf.open(filename) as f:
+                                # Try different encodings
+                                content = f.read()
+                                for encoding in ['utf-8', 'latin-1', 'iso-8859-1']:
+                                    try:
+                                        df = pd.read_csv(io.BytesIO(content), encoding=encoding)
+                                        break
+                                    except:
+                                        continue
+                                
+                                # Store the dataframe
+                                extracted_data["eeg_data"].append({
+                                    "filename": filename,
+                                    "data": df,
+                                    "shape": df.shape,
+                                    "columns": list(df.columns)
+                                })
+                                
+                                st.success(f"✅ Loaded CSV: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
+                                
+                                # Extract subject IDs
+                                subject_match = re.search(r'[SP]\d{3}|subject_\d+|sub\d+|participant_\d+|patient_\d+', filename, re.I)
+                                if subject_match:
+                                    extracted_data["subjects"].append(subject_match.group())
+                        except Exception as e:
+                            st.warning(f"Could not read CSV {filename}: {str(e)}")
                     
                     elif filename.endswith('.json'):
-                        with zf.open(filename) as f:
-                            extracted_data["metadata"][filename] = json.loads(f.read())
+                        try:
+                            with zf.open(filename) as f:
+                                extracted_data["metadata"][filename] = json.loads(f.read())
+                        except:
+                            pass
                     
                     elif filename.endswith('.txt'):
-                        with zf.open(filename) as f:
-                            lines = f.read().decode('utf-8').strip().split('\n')
-                            # Try to parse as numeric data
-                            try:
-                                data = np.array([float(line.strip()) for line in lines if line.strip()])
-                                if len(data) > 100:  # Likely EEG data
+                        try:
+                            with zf.open(filename) as f:
+                                content = f.read().decode('utf-8', errors='ignore').strip()
+                                lines = content.split('\n')
+                                
+                                # Try to parse as numeric data
+                                numeric_lines = []
+                                for line in lines:
+                                    line = line.strip()
+                                    if line and not any(c.isalpha() for c in line):  # No letters
+                                        try:
+                                            val = float(line.replace(',', '.'))  # Handle comma decimals
+                                            numeric_lines.append(val)
+                                        except:
+                                            pass
+                                
+                                if len(numeric_lines) > 100:  # Likely EEG data
+                                    data = np.array(numeric_lines)
                                     extracted_data["eeg_data"].append({
                                         "filename": filename,
                                         "data": data,
                                         "shape": data.shape,
                                         "type": "single_channel"
                                     })
-                            except:
-                                pass  # Not numeric data
+                                    st.success(f"✅ Loaded TXT: {filename} ({len(data)} samples)")
+                        except Exception as e:
+                            st.warning(f"Could not read TXT {filename}: {str(e)}")
+                    
+                    elif filename.endswith(('.edf', '.bdf')):
+                        st.info(f"ℹ️ Found EDF/BDF file: {filename} (requires special library)")
                 
                 extracted_data["subjects"] = list(set(extracted_data["subjects"]))
                 
@@ -291,47 +371,97 @@ class AdvancedEEGProcessor:
             st.warning("No EEG data found. Generating demo signals...")
             return self.generate_demo_data()
         
-        eeg_item = data_dict["eeg_data"][0]
+        # Try to find valid EEG data in the extracted files
+        valid_data = None
         
-        if isinstance(eeg_item["data"], pd.DataFrame):
-            df = eeg_item["data"]
-            
-            # Remove time column if present
-            if any(col in df.columns[0].lower() for col in ['time', 'index', 'timestamp']):
-                data = df.iloc[:, 1:].values.T
-                channels = list(df.columns[1:])
-            else:
-                data = df.values.T
-                channels = list(df.columns)
-            
-            # Estimate sampling rate
-            fs = 256  # Default
-            if "metadata" in data_dict and data_dict["metadata"]:
-                for meta in data_dict["metadata"].values():
-                    if "sampling_rate" in meta:
-                        fs = meta["sampling_rate"]
+        for eeg_item in data_dict["eeg_data"]:
+            try:
+                if isinstance(eeg_item["data"], pd.DataFrame):
+                    df = eeg_item["data"]
+                    
+                    # Show data preview for debugging
+                    st.info(f"Processing file: {eeg_item['filename']}")
+                    
+                    # Clean the dataframe - remove non-numeric columns
+                    numeric_columns = []
+                    for col in df.columns:
+                        try:
+                            # Try to convert column to numeric
+                            pd.to_numeric(df[col], errors='raise')
+                            numeric_columns.append(col)
+                        except:
+                            # Skip non-numeric columns (like gender, labels, etc.)
+                            st.warning(f"Skipping non-numeric column: {col}")
+                    
+                    if len(numeric_columns) == 0:
+                        st.warning(f"No numeric columns found in {eeg_item['filename']}")
+                        continue
+                    
+                    # Keep only numeric columns
+                    df_numeric = df[numeric_columns]
+                    
+                    # Check if first column is time/index
+                    first_col = df_numeric.columns[0] if len(df_numeric.columns) > 0 else ""
+                    if any(col in str(first_col).lower() for col in ['time', 'index', 'timestamp', 'sample']):
+                        data = df_numeric.iloc[:, 1:].values.T
+                        channels = list(df_numeric.columns[1:])
+                    else:
+                        data = df_numeric.values.T
+                        channels = list(df_numeric.columns)
+                    
+                    # Convert to float and check for validity
+                    data = data.astype(float)
+                    
+                    # Remove any NaN values
+                    if np.any(np.isnan(data)):
+                        st.warning("Found NaN values, replacing with zeros")
+                        data = np.nan_to_num(data, nan=0.0)
+                    
+                    # Ensure we have valid data
+                    if data.shape[0] > 0 and data.shape[1] > 100:  # At least 100 samples
+                        valid_data = data
+                        valid_channels = channels
+                        st.success(f"✅ Successfully loaded {data.shape[0]} channels with {data.shape[1]} samples")
                         break
-                    elif "fs" in meta:
-                        fs = meta["fs"]
+                    
+                elif isinstance(eeg_item["data"], np.ndarray):
+                    # Single channel data
+                    single_channel = eeg_item["data"]
+                    if len(single_channel) > 100:  # At least 100 samples
+                        n_samples = len(single_channel)
+                        n_channels = 8
+                        
+                        # Create multi-channel from single channel
+                        data = np.zeros((n_channels, n_samples))
+                        for ch in range(n_channels):
+                            data[ch] = single_channel + np.random.normal(0, 1, n_samples) * 0.1
+                        
+                        valid_data = data
+                        valid_channels = [f"CH_{i+1}" for i in range(n_channels)]
+                        st.success(f"✅ Processed single-channel data into {n_channels} channels")
                         break
-            
-        elif isinstance(eeg_item["data"], np.ndarray):
-            # Single channel data
-            single_channel = eeg_item["data"]
-            n_samples = len(single_channel)
-            n_channels = 8
-            
-            # Create multi-channel from single channel
-            data = np.zeros((n_channels, n_samples))
-            for ch in range(n_channels):
-                data[ch] = single_channel + np.random.normal(0, 1, n_samples) * 0.1
-            
-            channels = [f"CH_{i+1}" for i in range(n_channels)]
-            fs = 173.61  # Bonn sampling rate
-        else:
+                        
+            except Exception as e:
+                st.warning(f"Could not process {eeg_item.get('filename', 'unknown')}: {str(e)}")
+                continue
+        
+        # If no valid data found, generate demo data
+        if valid_data is None:
+            st.warning("Could not process uploaded data. Generating demo signals for demonstration...")
             return self.generate_demo_data()
         
-        return data.astype(float), int(fs), channels
+        # Estimate sampling rate
+        fs = 256  # Default
+        if "metadata" in data_dict and data_dict["metadata"]:
+            for meta in data_dict["metadata"].values():
+                if "sampling_rate" in meta:
+                    fs = meta["sampling_rate"]
+                    break
+                elif "fs" in meta:
+                    fs = meta["fs"]
+                    break
+        
+        return valid_data, int(fs), valid_channels
     
     def generate_demo_data(self) -> Tuple[np.ndarray, int, List[str]]:
         """Generate demo EEG data"""
@@ -341,13 +471,16 @@ class AdvancedEEGProcessor:
         n_samples = fs * duration
         time = np.linspace(0, duration, n_samples)
         
+        st.info("🎮 Generating demo EEG signals for analysis...")
+        
         data = np.zeros((n_channels, n_samples))
         for ch in range(n_channels):
-            # Mix of frequencies
-            data[ch] += 30 * np.sin(2 * np.pi * 10 * time)  # Alpha
-            data[ch] += 20 * np.sin(2 * np.pi * 20 * time)  # Beta
-            data[ch] += 10 * np.sin(2 * np.pi * 5 * time)   # Theta
-            data[ch] += np.random.normal(0, 5, n_samples)
+            # Mix of frequencies to simulate real EEG
+            data[ch] += 30 * np.sin(2 * np.pi * 10 * time + np.random.random() * 2 * np.pi)  # Alpha
+            data[ch] += 20 * np.sin(2 * np.pi * 20 * time + np.random.random() * 2 * np.pi)  # Beta
+            data[ch] += 10 * np.sin(2 * np.pi * 5 * time + np.random.random() * 2 * np.pi)   # Theta
+            data[ch] += 15 * np.sin(2 * np.pi * 2 * time + np.random.random() * 2 * np.pi)   # Delta
+            data[ch] += np.random.normal(0, 5, n_samples)  # Noise
         
         channels = [f"CH_{i+1}" for i in range(n_channels)]
         return data, fs, channels
@@ -824,10 +957,16 @@ def main():
         
         # Database selection with icons
         st.subheader("📊 Select Database")
+        
+        # Debug: Show available databases
+        available_dbs = list(REAL_DATABASES.keys())
+        st.caption(f"Available: {len(available_dbs)} databases")
+        
         database_id = st.selectbox(
             "Choose Dataset:",
-            options=list(REAL_DATABASES.keys()),
-            format_func=lambda x: REAL_DATABASES[x]["name"]
+            options=available_dbs,
+            format_func=lambda x: REAL_DATABASES[x]["name"],
+            key="database_selector"
         )
         
         if database_id:
@@ -838,7 +977,7 @@ def main():
                 
                 **Format:** {db_info['format'].upper()}
                 
-                **Source:** {'GitHub' if db_info['type'] == 'github' else 'Google Drive'}
+                **Source:** {'GitHub' if db_info['type'] == 'github' else 'Google Drive' if db_info['type'] == 'gdrive' else 'Demo'}
                 
                 **Citation:** {db_info['citation']}
                 
@@ -864,29 +1003,62 @@ def main():
     # Main content area
     st.header(f"Analyzing: {REAL_DATABASES[database_id]['name']}")
     
+    # Add troubleshooting info
+    if database_id == "psi_database":
+        st.info("💡 PSI Database: Contains psychedelic EEG recordings. Data may include metadata columns that will be automatically filtered.")
+    elif database_id == "alcohol_database":
+        st.info("💡 Alcohol Database: Contains EEG recordings under alcohol influence. Large file may take time to download.")
+    
     # Analysis button
     if st.button("🚀 Download & Analyze Dataset", type="primary", use_container_width=True):
         
-        # Download dataset
-        success, zip_content, message = processor.downloader.download_dataset(database_id)
-        
-        if success and zip_content:
-            st.success(f"✅ {message}")
+        try:
+            # Download dataset
+            success, zip_content, message = processor.downloader.download_dataset(database_id)
             
-            # Extract data
-            with st.spinner("📦 Extracting data from archive..."):
-                extracted_data = processor.downloader.extract_zip_data(zip_content, database_id)
-            
-            if extracted_data["files"]:
-                st.success(f"✅ Found {len(extracted_data['files'])} files in archive")
+            if success and zip_content:
+                st.success(f"✅ {message}")
+                
+                # Check file size
+                file_size_mb = len(zip_content) / (1024 * 1024)
+                st.info(f"📦 Downloaded file size: {file_size_mb:.2f} MB")
+                
+                # Extract data
+                with st.spinner("📦 Extracting data from archive..."):
+                    extracted_data = processor.downloader.extract_zip_data(zip_content, database_id)
+                
+                if extracted_data["files"]:
+                    st.success(f"✅ Found {len(extracted_data['files'])} files in archive")
                 
                 # Show extracted files
-                with st.expander(f"📁 Archive Contents ({len(extracted_data['files'])} files)"):
+                with st.expander(f"📁 Archive Contents ({len(extracted_data['files'])} files)", expanded=True):
+                    # Show file list
+                    st.write("**Files found:**")
                     cols = st.columns(2)
                     for idx, file in enumerate(extracted_data['files'][:20]):
                         cols[idx % 2].write(f"• {file}")
                     if len(extracted_data['files']) > 20:
                         st.write(f"... and {len(extracted_data['files']) - 20} more files")
+                    
+                    # Show data preview if available
+                    if extracted_data["eeg_data"]:
+                        st.write("\n**📊 Data Preview:**")
+                        for i, eeg_item in enumerate(extracted_data["eeg_data"][:3]):  # Show first 3 files
+                            if isinstance(eeg_item["data"], pd.DataFrame):
+                                df = eeg_item["data"]
+                                st.write(f"\n**File:** {eeg_item['filename']}")
+                                st.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+                                st.write("Columns:", list(df.columns)[:10])
+                                if len(df.columns) > 10:
+                                    st.write(f"... and {len(df.columns) - 10} more columns")
+                                
+                                # Show first few rows
+                                st.write("First 5 rows:")
+                                st.dataframe(df.head(), use_container_width=True)
+                            elif isinstance(eeg_item["data"], np.ndarray):
+                                st.write(f"\n**File:** {eeg_item['filename']}")
+                                st.write(f"Array shape: {eeg_item['data'].shape}")
+                                st.write(f"Data type: Single channel numeric")
                     
                     if extracted_data["subjects"]:
                         st.write(f"\n**Subjects found:** {', '.join(extracted_data['subjects'][:10])}")
